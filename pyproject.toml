@@ -10,3 +10,12 @@ dependencies = [
     "plotly>=6.9.0",
     "uvicorn>=0.51.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
