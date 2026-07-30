@@ -9,13 +9,15 @@ Run `/scripts/fetch.sh` to download the dataset
 # Running
 
 ```
-uv run python -m triage.main                    # default site: 2107 (local CSVs)
-TRIAGE_SITE=sn108 uv run python -m triage.main  # SolarNetwork node 108 (live API)
+uv run --env-file .env python -m triage.main    # site from this device's .env
+TRIAGE_SITE=sn108 uv run python -m triage.main  # or set the env var directly
 ```
 
 One process serves one site, chosen by the `TRIAGE_SITE` env var (keys of
-`SITES` in `triage/config.py`). Output: classification table on stdout and
-`reports/report.html`.
+`SITES` in `triage/config.py`). Each deployed device carries its own `.env`
+(copy `.env.example`; gitignored) and uv's `--env-file` loads it — the code
+itself only ever reads the environment. Output: classification table on
+stdout and `reports/report.html`.
 
 Onboarding a site is config-only: add a `SiteConfig` entry with either a
 `CsvAdapter` (declarative file specs: per-file timestamp column/timezone,
