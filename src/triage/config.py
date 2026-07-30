@@ -14,6 +14,7 @@ from triage.adapters import (
     SourceFile,
     Stream,
 )
+from triage.weather import OpenMeteoWeather
 
 
 @dataclass(frozen=True)
@@ -23,11 +24,12 @@ class SiteConfig:
     dc_capacity_kw: float
     ac_capacity_kw: float
     source: Adapter
-    # clear-sky expected-power facts (None when the site has measured POA)
+    # expected-power model facts (None when the site has measured POA)
     lat: float | None = None
     lon: float | None = None
     tilt: float | None = None
     azimuth: float | None = None
+    weather: OpenMeteoWeather | None = None  # reanalysis POA; None = clear-sky
     # analysis window (None = open-ended)
     report_start: str | None = None
     report_end: str | None = None
@@ -98,6 +100,11 @@ SITES: dict[str, SiteConfig] = {
             power_source_id="Solar",
             start="2025-08-01",  # healthy baseline before the November decline
             end="2026-03-01",  # through post-repair recovery
+            cache_dir=Path("data/sn120"),
+        ),
+        weather=OpenMeteoWeather(
+            start="2025-08-01",
+            end="2026-03-01",
             cache_dir=Path("data/sn120"),
         ),
     ),

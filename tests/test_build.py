@@ -34,6 +34,7 @@ def test_build_dataset_falls_back_to_clearsky_without_poa():
     idx = pd.date_range("2024-06-01", periods=96, freq="15min", tz="Pacific/Auckland")
     site = SimpleNamespace(
         source=StubSource(pd.DataFrame({"ac_power_kw": 10.0}, index=idx)),
+        weather=None,  # no reanalysis source -> clear-sky tier
         lat=-36.9,
         lon=174.8,
         tilt=25.0,

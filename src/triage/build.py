@@ -6,10 +6,13 @@ from triage.physics import clearsky_poa, expected_kw
 
 def build_dataset(site: SiteConfig) -> pd.DataFrame:
     df = site.source.load(site)
+    # trust ladder for the irradiance driving expected power:
     if "poa_wm2" in df.columns and df["poa_wm2"].notna().any():
-        poa = df["poa_wm2"]  # measured irradiance: weather cancels out of PI
+        poa = df["poa_wm2"]  # 1. on-site sensor: weather cancels out of PI
+    elif site.weather is not None:
+        poa = site.weather.poa(site).reindex(df.index)  # 2. reanalysis clouds
     else:
-        poa = clearsky_poa(df.index, site)
+        poa = clearsky_poa(df.index, site)  # 3. cloudless ceiling
     df["expected_kw"] = expected_kw(poa, site)
     return df
 
