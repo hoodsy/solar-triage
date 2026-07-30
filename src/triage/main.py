@@ -1,20 +1,26 @@
+import os
+
 import pandas as pd
 
 from triage.classify import classify
+from triage.config import SITES
 from triage.ingest import add_flags, build_daily, build_dataset
 from triage.report import write_report
 
 
 def main():
-    df = build_dataset()
-    daily = build_daily(df).loc["2024-01-01":"2024-11-30"]
-    daily = add_flags(daily)
+    # one process = one site: chosen at deploy time, e.g. TRIAGE_SITE=sn108
+    site = SITES[os.environ.get("TRIAGE_SITE", "2107")]
 
-    result = classify(daily, df)
+    df = build_dataset(site)
+    daily = build_daily(df, site).loc[site.report_start : site.report_end]
+    daily = add_flags(daily, site)
+
+    result = classify(daily, df, site)
     with pd.option_context("display.max_colwidth", None):
         print(result.to_string())
 
-    write_report(result, daily, df)
+    write_report(result, daily, df, site)
     print("\nwrote reports/report.html")
 
 

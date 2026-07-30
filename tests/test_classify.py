@@ -11,19 +11,20 @@ def make_daily(pi_values) -> pd.DataFrame:
     return pd.DataFrame({"pi": list(pi_values), "pi_baseline": 1.0}, index=idx)
 
 
-# detect_soiling never reads intraday data, so None stands in for it.
+# detect_soiling reads neither intraday data nor site config, so None stands
+# in for both — the uniform detector signature is the only reason they exist.
 
 
 def test_fires_on_gradual_decline():
     daily = make_daily(1.0 - 0.004 * np.arange(16))  # smooth -0.4%/day slide
-    assert detect_soiling(daily.index[-1], None, daily) is not None
+    assert detect_soiling(daily.index[-1], None, daily, None) is not None
 
 
 def test_rejects_single_step():
     daily = make_daily([1.0] * 12 + [0.85] * 4)  # flat, then one -15% step
-    assert detect_soiling(daily.index[-1], None, daily) is None
+    assert detect_soiling(daily.index[-1], None, daily, None) is None
 
 
 def test_rejects_double_step():
     daily = make_daily([1.0] * 6 + [0.93] * 5 + [0.86] * 5)  # two -7% steps
-    assert detect_soiling(daily.index[-1], None, daily) is None
+    assert detect_soiling(daily.index[-1], None, daily, None) is None

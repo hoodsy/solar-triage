@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
 
-from triage.config import SITE
+if TYPE_CHECKING:
+    from triage.config import SiteConfig
 
 
 class Fault(StrEnum):
@@ -26,10 +31,10 @@ def midday_plateau(intraday: pd.DataFrame) -> tuple[int, float, pd.DataFrame]:
 
 
 def detect_outage(
-    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
 ) -> str | None:
     actual, expected = intraday["ac_power_kw"], intraday["expected_kw"]
-    dead = (actual < 0.05 * expected) & (expected > 0.20 * SITE.dc_capacity_kw)
+    dead = (actual < 0.05 * expected) & (expected > 0.20 * site.dc_capacity_kw)
     run = longest_run(dead)
     if run >= 4:
         return (
@@ -41,17 +46,17 @@ def detect_outage(
     plateau_run, peak, midday = midday_plateau(intraday)
     if (
         plateau_run >= 7  # tuned on 2024 referee data: real degraded ceilings held >=1.75h
-        and peak < 0.95 * SITE.ac_capacity_kw
-        and midday["expected_kw"].max() > 0.95 * SITE.ac_capacity_kw  # bright day
+        and peak < 0.95 * site.ac_capacity_kw
+        and midday["expected_kw"].max() > 0.95 * site.ac_capacity_kw  # bright day
     ):
         return (
             f"bright-day output plateaued {plateau_run / 4:.1f}h at {peak:.0f} kW — "
-            f"{peak / SITE.ac_capacity_kw:.0%} of the {SITE.ac_capacity_kw:.0f} kW "
+            f"{peak / site.ac_capacity_kw:.0%} of the {site.ac_capacity_kw:.0f} kW "
             f"AC ceiling — partial capacity loss"
         )
     # partial outage without a clean plateau (cloud-chopped mornings, short caps):
     # healthy panels keep the cool-morning surplus while midday capacity is missing
-    lit = intraday[intraday["expected_kw"] > 0.20 * SITE.dc_capacity_kw]
+    lit = intraday[intraday["expected_kw"] > 0.20 * site.dc_capacity_kw]
     ratio = lit["ac_power_kw"] / lit["expected_kw"]
     morning = ratio.between_time("07:00", "10:00").median()
     midday_ratio = ratio.between_time("11:00", "14:00").median()
@@ -63,7 +68,7 @@ def detect_outage(
     recent = daily.loc[:day, "pi"].tail(3)
     if (
         len(recent) == 3
-        and (recent < SITE.flag_threshold * daily.at[day, "pi_baseline"]).all()
+        and (recent < site.flag_threshold * daily.at[day, "pi_baseline"]).all()
     ):
         return (
             f"PI {recent.median():.2f} vs baseline {daily.at[day, 'pi_baseline']:.2f} "
@@ -73,24 +78,24 @@ def detect_outage(
 
 
 def detect_clipping(
-    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
 ) -> str | None:
     plateau_run, peak, midday = midday_plateau(intraday)
     if (
         plateau_run >= 8
-        and peak >= 0.95 * SITE.ac_capacity_kw  # pinned at the real ceiling
+        and peak >= 0.95 * site.ac_capacity_kw  # pinned at the real ceiling
         and midday["expected_kw"].max() > 1.05 * peak
     ):
         return (
             f"actual pinned {plateau_run / 4:.1f}h at {peak:.0f} kW — the "
-            f"{SITE.ac_capacity_kw:.0f} kW AC ceiling — while expected reached "
+            f"{site.ac_capacity_kw:.0f} kW AC ceiling — while expected reached "
             f"{midday['expected_kw'].max():.0f} kW"
         )
     return None
 
 
 def detect_soiling(
-    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
 ) -> str | None:
     trail = daily.loc[:day, "pi"].iloc[:-1].dropna().tail(14)  # exclude current day
     if len(trail) >= 10:
@@ -120,15 +125,15 @@ RULES = [
 
 
 def classify_day(
-    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
 ) -> tuple[Fault, str]:
     for label, detect in RULES:
-        if evidence := detect(day, intraday, daily):
+        if evidence := detect(day, intraday, daily, site):
             return label, evidence
     return Fault.UNCLASSIFIED, "no rule matched"
 
 
-def classify(daily: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+def classify(daily: pd.DataFrame, df: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
     """
     For each flagged day, select it and the trailing daily context,
     run rules in precedence order, first match wins.
@@ -136,7 +141,7 @@ def classify(daily: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for day in daily.index[daily["flagged"].fillna(False)]:
         intraday = df.loc[day.strftime("%Y-%m-%d")]
-        label, evidence = classify_day(day, intraday, daily)
+        label, evidence = classify_day(day, intraday, daily, site)
         rows.append(
             {
                 "date": day,

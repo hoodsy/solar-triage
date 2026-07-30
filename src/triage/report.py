@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from triage.config import SITE
 from triage.plot import plot_day, plot_energy, plot_pi
+
+if TYPE_CHECKING:
+    from triage.config import SiteConfig
 
 REPORT_HEAD = """<!doctype html>
 <html><head>
@@ -35,6 +40,7 @@ def write_report(
     result: pd.DataFrame,
     daily: pd.DataFrame,
     df: pd.DataFrame,
+    site: SiteConfig,
     path: str = "reports/report.html",
 ) -> None:
     """One HTML page: season energy + PI overview, then per-flagged-day evidence charts."""
@@ -47,7 +53,7 @@ def write_report(
 
     parts = [
         REPORT_HEAD,
-        f"<h1>Solar triage report — {SITE.name}</h1>",
+        f"<h1>Solar triage report — {site.name}</h1>",
         "<h2>Season energy</h2>",
         '<p class="desc">Daily measured energy (blue) against the irradiance-driven '
         "expectation (gray); gray showing above blue is energy the site failed to produce.</p>",
@@ -55,14 +61,14 @@ def write_report(
         "<h2>Performance index &amp; flags</h2>",
         '<p class="desc">Daily PI (actual / expected) against its rolling baseline; '
         "red markers are flagged days, judged against the dotted threshold.</p>",
-        card(plot_pi(daily).to_html(full_html=False, include_plotlyjs=False)),
+        card(plot_pi(daily, site).to_html(full_html=False, include_plotlyjs=False)),
         "<h2>Flagged days</h2>",
         f'<p class="desc">{len(result)} flagged days, each given one label and its '
         "evidence (precedence: outage &gt; clipping &gt; soiling &gt; unclassified).</p>",
         card(table.to_html(border=0)),
     ]
     for day, row in result.iterrows():
-        fig = plot_day(df, day.strftime("%Y-%m-%d"))
+        fig = plot_day(df, day.strftime("%Y-%m-%d"), site)
         parts.append(
             card(
                 f"<h3>{day.date()} — {row['label']} (PI {row['pi']:.2f})</h3>"
