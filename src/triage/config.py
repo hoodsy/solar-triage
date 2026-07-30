@@ -77,22 +77,28 @@ SITES: dict[str, SiteConfig] = {
             ),
         ),
     ),
-    # SolarNetwork public node 108 (Auckland, NZ) — live demo node, polled over
-    # HTTP. No irradiance source, so expected power uses the clear-sky model.
-    # Capacities and geometry are UNVERIFIED estimates (node metadata is not
-    # public; winter midday output observed ~27 kW); flag thresholds untuned.
-    "sn108": SiteConfig(
-        name="SolarNetwork node 108",
+    # SolarNetwork public node 120 (Auckland, NZ) — residential PV, live data
+    # since 2014. No irradiance source, so expected power uses the clear-sky
+    # model; flag thresholds untuned for this site. The fixed study window
+    # spans a real outage: zero output Dec 2025 - Jan 2026 while telemetry
+    # stayed live, recovering in February.
+    "sn120": SiteConfig(
+        name="SolarNetwork node 120",
         tz="Pacific/Auckland",
-        # unverified estimates, sized so clear-sky expected clears the observed
-        # winter actual peak of ~36 kW (calibration rule: expected >= actual on
-        # clear days); revisit against summer data
-        dc_capacity_kw=60.0,
-        ac_capacity_kw=45.0,
+        # sized from observed output (summer 15-min peak 1.53 kW, instantaneous
+        # 1.88 kW); geometry is an unverified Auckland guess
+        dc_capacity_kw=2.0,
+        ac_capacity_kw=1.9,
         lat=-36.85,
-        lon=174.76,  # Auckland area
+        lon=174.76,
         tilt=25.0,
-        azimuth=0.0,  # north-facing guess (southern hemisphere)
-        source=SolarNetworkAdapter(node_id=108, power_source_id="DB"),
+        azimuth=0.0,  # north-facing (southern hemisphere)
+        source=SolarNetworkAdapter(
+            node_id=120,
+            power_source_id="Solar",
+            start="2025-08-01",  # healthy baseline before the November decline
+            end="2026-03-01",  # through post-repair recovery
+            cache_dir=Path("data/sn120"),
+        ),
     ),
 }

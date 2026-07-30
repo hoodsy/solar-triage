@@ -120,6 +120,8 @@ def test_solarnetwork_mapping_and_pagination(monkeypatch):
     calls = []
 
     class FakeResponse:
+        status_code = 200
+
         def __init__(self, payload):
             self._payload = payload
 
@@ -136,7 +138,7 @@ def test_solarnetwork_mapping_and_pagination(monkeypatch):
     import httpx
 
     monkeypatch.setattr(httpx, "get", fake_get)
-    adapter = SolarNetworkAdapter(node_id=108, power_source_id="DB", lookback_days=1)
+    adapter = SolarNetworkAdapter(node_id=120, power_source_id="Solar", lookback_days=1)
     df = adapter.load(make_site(tz="Pacific/Auckland"))
 
     assert len(calls) == 2  # pagination followed to totalResults
@@ -145,3 +147,47 @@ def test_solarnetwork_mapping_and_pagination(monkeypatch):
     # 2026-07-28 00:00 UTC == 12:00 NZST (winter, UTC+12)
     assert df.index[0] == pd.Timestamp("2026-07-28 12:00", tz="Pacific/Auckland")
     assert df["ac_power_kw"].iloc[0] == pytest.approx(27.3758)
+    # request params must be UTC (the API interprets startDate/endDate as UTC)
+    assert calls[0]["aggregation"] == "FifteenMinute"
+
+
+def test_solarnetwork_fixed_window_cache(tmp_path, monkeypatch):
+    page = {"data": {"totalResults": 1, "startingOffset": 0, "returnedResultCount": 1,
+                     "results": [
+                         {"created": "2026-06-01 00:00:00Z", "sourceId": "Solar", "watts": 1500.0},
+                     ]}}
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return page
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append(params)
+        return FakeResponse()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    adapter = SolarNetworkAdapter(
+        node_id=120, power_source_id="Solar",
+        start="2026-06-01", end="2026-06-02", cache_dir=tmp_path,
+    )
+    site = make_site(tz="Pacific/Auckland")
+
+    df1 = adapter.load(site)
+    assert len(calls) == 1  # fetched over HTTP once
+    assert (tmp_path / "node120_Solar_2026-06-01_2026-06-02.csv").exists()
+
+    def no_http(*args, **kwargs):
+        raise AssertionError("HTTP hit despite cache")
+
+    monkeypatch.setattr(httpx, "get", no_http)
+    df2 = adapter.load(site)  # served from disk
+    assert list(df1.index) == list(df2.index)
+    assert df1["ac_power_kw"].tolist() == df2["ac_power_kw"].tolist()
