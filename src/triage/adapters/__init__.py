@@ -1,9 +1,11 @@
 """Source adapters: each turns a site's raw data into the canonical frame.
 
 Canonical contract (every adapter's postcondition): tz-aware site-local
-DatetimeIndex named "measured_on" at site.interval; column ac_power_kw (kW)
-and, when the site has an irradiance stream, poa_wm2 (W/m^2). expected_kw is
-a model, not a measurement — it is computed downstream in ingest, never here.
+DatetimeIndex named "measured_on" at site.interval, where each label marks
+the END of its interval (the 00:15 stamp covers 00:00-00:15); column
+ac_power_kw (kW) and, when the site has an irradiance stream, poa_wm2
+(W/m^2). expected_kw is a model, not a measurement — it is computed
+downstream in build, never here.
 
 This package index holds the generic pieces (the Adapter protocol and the
 declarative spec dataclasses); each concrete source lives in its own module

@@ -144,8 +144,8 @@ def test_solarnetwork_mapping_and_pagination(monkeypatch):
     assert len(calls) == 2  # pagination followed to totalResults
     assert len(df) == 3
     assert df.index.name == "measured_on"
-    # 2026-07-28 00:00 UTC == 12:00 NZST (winter, UTC+12)
-    assert df.index[0] == pd.Timestamp("2026-07-28 12:00", tz="Pacific/Auckland")
+    # 2026-07-28 00:00 UTC == 12:00 NZST, +15min start->end label shift
+    assert df.index[0] == pd.Timestamp("2026-07-28 12:15", tz="Pacific/Auckland")
     assert df["ac_power_kw"].iloc[0] == pytest.approx(27.3758)
     # request params must be UTC (the API interprets startDate/endDate as UTC)
     assert calls[0]["aggregation"] == "FifteenMinute"

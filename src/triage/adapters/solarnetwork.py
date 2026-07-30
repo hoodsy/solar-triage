@@ -108,6 +108,10 @@ class SolarNetworkAdapter:
         index = pd.DatetimeIndex(
             pd.to_datetime(raw["created"], utc=True), name="measured_on"
         ).tz_convert(site.tz)
+        # datum stamps mark the bucket START; the canonical contract labels
+        # intervals by their END (matching the 2107 meter files and
+        # Open-Meteo's preceding-hour convention) -> shift one interval
+        index = index + pd.Timedelta(site.interval)
         out = pd.DataFrame(
             {"ac_power_kw": (raw["watts"] / 1000.0).to_numpy()}, index=index
         )
