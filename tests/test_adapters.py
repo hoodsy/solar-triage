@@ -1,8 +1,9 @@
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
-from triage.adapters import CsvAdapter, SourceFile, Stream
+from triage.adapters import CsvAdapter, SolarNetworkAdapter, SourceFile, Stream
 
 
 def make_site(tz="US/Pacific", interval="15min"):
@@ -101,3 +102,46 @@ def test_power_only_site(tmp_path):
     )
     df = adapter.load(make_site())
     assert list(df.columns) == ["ac_power_kw"]
+
+
+def test_solarnetwork_mapping_and_pagination(monkeypatch):
+    # recorded shape of /solarquery/api/v1/pub/datum/list, split into two pages
+    pages = [
+        {"data": {"totalResults": 3, "startingOffset": 0, "returnedResultCount": 2,
+                  "results": [
+                      {"created": "2026-07-28 00:00:00Z", "sourceId": "DB", "watts": 27375.8},
+                      {"created": "2026-07-28 00:15:00Z", "sourceId": "DB", "watts": 25797.3},
+                  ]}},
+        {"data": {"totalResults": 3, "startingOffset": 2, "returnedResultCount": 1,
+                  "results": [
+                      {"created": "2026-07-28 00:30:00Z", "sourceId": "DB", "watts": 24000.0},
+                  ]}},
+    ]
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._payload
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append(params)
+        return FakeResponse(pages[len(calls) - 1])
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    adapter = SolarNetworkAdapter(node_id=108, power_source_id="DB", lookback_days=1)
+    df = adapter.load(make_site(tz="Pacific/Auckland"))
+
+    assert len(calls) == 2  # pagination followed to totalResults
+    assert len(df) == 3
+    assert df.index.name == "measured_on"
+    # 2026-07-28 00:00 UTC == 12:00 NZST (winter, UTC+12)
+    assert df.index[0] == pd.Timestamp("2026-07-28 12:00", tz="Pacific/Auckland")
+    assert df["ac_power_kw"].iloc[0] == pytest.approx(27.3758)

@@ -7,7 +7,13 @@ startup via the TRIAGE_SITE env var (see main.py).
 from dataclasses import dataclass
 from pathlib import Path
 
-from triage.adapters import Adapter, CsvAdapter, SourceFile, Stream
+from triage.adapters import (
+    Adapter,
+    CsvAdapter,
+    SolarNetworkAdapter,
+    SourceFile,
+    Stream,
+)
 
 
 @dataclass(frozen=True)
@@ -71,5 +77,23 @@ SITES: dict[str, SiteConfig] = {
                 resample=True,
             ),
         ),
+    ),
+    # SolarNetwork public node 108 (Auckland, NZ) — live demo node, polled over
+    # HTTP. No irradiance source, so expected power uses the clear-sky model.
+    # Capacities and geometry are UNVERIFIED estimates (node metadata is not
+    # public; winter midday output observed ~27 kW); flag thresholds untuned.
+    "sn108": SiteConfig(
+        name="SolarNetwork node 108",
+        tz="Pacific/Auckland",
+        # unverified estimates, sized so clear-sky expected clears the observed
+        # winter actual peak of ~36 kW (calibration rule: expected >= actual on
+        # clear days); revisit against summer data
+        dc_capacity_kw=60.0,
+        ac_capacity_kw=45.0,
+        lat=-36.85,
+        lon=174.76,  # Auckland area
+        tilt=25.0,
+        azimuth=0.0,  # north-facing guess (southern hemisphere)
+        source=SolarNetworkAdapter(node_id=108, power_source_id="DB"),
     ),
 }

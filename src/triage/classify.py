@@ -154,4 +154,9 @@ def classify(daily: pd.DataFrame, df: pd.DataFrame, site: SiteConfig) -> pd.Data
                 "evidence": evidence,
             }
         )
+    if not rows:  # a healthy window flags nothing; keep schema AND index type
+        return pd.DataFrame(
+            columns=["label", "pi", "evidence"],
+            index=pd.DatetimeIndex([], name="date"),
+        )
     return pd.DataFrame(rows).set_index("date")
