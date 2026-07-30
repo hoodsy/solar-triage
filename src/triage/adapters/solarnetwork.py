@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import httpx
 
 if TYPE_CHECKING:
     from triage.config import SiteConfig
@@ -24,8 +25,6 @@ class SolarNetworkAdapter:
     lookback_days: int = 60
 
     def load(self, site: SiteConfig) -> pd.DataFrame:
-        import httpx  # lazy: CSV sites never pay for it
-
         end = pd.Timestamp.now(tz=site.tz)
         start = end - pd.Timedelta(days=self.lookback_days)
         rows: list[dict] = []

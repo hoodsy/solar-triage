@@ -9,8 +9,8 @@ Run `/scripts/fetch.sh` to download the dataset
 # Running
 
 ```
-uv run --env-file .env python -m triage.main    # site from this device's .env
-TRIAGE_SITE=sn108 uv run python -m triage.main  # or set the env var directly
+uv run --env-file .env python -m triage    # site from this device's .env
+TRIAGE_SITE=sn108 uv run triage            # or set the env var directly
 ```
 
 One process serves one site, chosen by the `TRIAGE_SITE` env var (keys of

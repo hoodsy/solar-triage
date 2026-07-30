@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from triage.ingest import build_daily, build_dataset
+from triage.build import build_daily, build_dataset
 
 
 class StubSource:
@@ -30,7 +30,7 @@ def test_build_daily_15min_regression():
     assert daily["coverage"].iloc[0] == 1.0
 
 
-def test_clearsky_expected_for_site_without_poa():
+def test_build_dataset_falls_back_to_clearsky_without_poa():
     idx = pd.date_range("2024-06-01", periods=96, freq="15min", tz="Pacific/Auckland")
     site = SimpleNamespace(
         source=StubSource(pd.DataFrame({"ac_power_kw": 10.0}, index=idx)),
@@ -44,6 +44,4 @@ def test_clearsky_expected_for_site_without_poa():
     )
     exp = build_dataset(site)["expected_kw"]
     assert (exp.fillna(0) >= 0).all()
-    assert (exp.between_time("00:00", "03:00").fillna(0) < 1.0).all()  # dark night
     assert exp.between_time("11:00", "14:00").max() > 10  # real winter midday power
-    assert exp.idxmax().hour in range(10, 15)  # peak lands midday

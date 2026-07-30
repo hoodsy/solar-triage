@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-triage = "triage.main:main"
+triage = "triage.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
