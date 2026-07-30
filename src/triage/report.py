@@ -36,7 +36,7 @@ REPORT_HEAD = """<!doctype html>
 </head><body><div class="wrap">"""
 
 
-def write_report(
+def report(
     result: pd.DataFrame,
     daily: pd.DataFrame,
     df: pd.DataFrame,

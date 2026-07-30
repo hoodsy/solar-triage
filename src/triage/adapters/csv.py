@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from triage.adapters import SourceFile
+
 if TYPE_CHECKING:
     from triage.adapters import Stream
     from triage.config import SiteConfig
@@ -20,6 +22,8 @@ class CsvAdapter:
     def _load_stream(self, stream: Stream, site: SiteConfig, name: str) -> pd.DataFrame:
         frames = []
         for f in stream.files:
+            if isinstance(f, str):
+                f = SourceFile(f)  # plain filename -> all defaults
             df = pd.read_csv(
                 self.data_dir / f.name, parse_dates=[f.time_col], index_col=f.time_col
             )

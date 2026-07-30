@@ -5,7 +5,7 @@ import pandas as pd
 from triage.build import build
 from triage.classify import classify
 from triage.config import SITES
-from triage.report import write_report
+from triage.report import report
 
 
 def main():
@@ -17,7 +17,7 @@ def main():
 
     with pd.option_context("display.max_colwidth", None):
         print(result.to_string())
-    write_report(result, daily, df, site)
+    report(result, daily, df, site)
     print("\nwrote reports/report.html")
 
 

@@ -36,7 +36,9 @@ class SourceFile:
 
 @dataclass(frozen=True)
 class Stream:
-    files: tuple[SourceFile, ...]  # concat order = dedupe precedence order
+    # concat order = dedupe precedence order; a plain str means
+    # SourceFile(name) with defaults (local naive "measured_on" stamps)
+    files: tuple[SourceFile | str, ...]
     column: str  # source data column to extract
     keep: Literal["first", "last"] = "last"  # duplicate-timestamp winner
     resample: bool = False  # mean-resample to site.interval

@@ -53,20 +53,19 @@ SITES: dict[str, SiteConfig] = {
         report_end="2024-11-30",
         source=CsvAdapter(
             data_dir=Path("data/2107/data"),
-            meter=Stream(
+            meter=Stream(  # keep="last" default: newest vintage wins on overlap
                 files=(
-                    SourceFile("2107_meter_15m_data.csv"),  # 2017-01 → 2023-11
-                    SourceFile("2107_meter_15m_data_2024.csv"),  # 2024-01 → 2024-11
-                    SourceFile("2107_meter_15m_data_2025.csv"),  # 2024-02 → 2025-12
+                    "2107_meter_15m_data.csv",  # 2017-01 → 2023-11
+                    "2107_meter_15m_data_2024.csv",  # 2024-01 → 2024-11
+                    "2107_meter_15m_data_2025.csv",  # 2024-02 → 2025-12
                 ),
                 column="meter_revenue_grade_ac_output_meter_149578",
-                keep="last",  # newest vintage wins on overlap
             ),
             irradiance=Stream(
                 files=(
-                    SourceFile("2107_irradiance_data.csv"),
-                    SourceFile("2107_irradiance_data_2024.csv"),
-                    SourceFile(
+                    "2107_irradiance_data.csv",
+                    "2107_irradiance_data_2024.csv",
+                    SourceFile(  # the odd one out: UTC stamps, different column
                         "2107_irradiance_15m_data_2025.csv",
                         time_col="utc_measured_on",
                         tz="UTC",

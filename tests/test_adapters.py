@@ -20,7 +20,7 @@ def test_canonical_contract(tmp_path):
     make_csv(tmp_path, "i.csv", ["2024-06-01 12:00", "2024-06-01 12:15"], [800.0, 900.0], col="poa")
     adapter = CsvAdapter(
         data_dir=tmp_path,
-        meter=Stream(files=(SourceFile("m.csv"),), column="power"),
+        meter=Stream(files=("m.csv",), column="power"),  # plain str -> SourceFile
         irradiance=Stream(files=(SourceFile("i.csv"),), column="poa"),
     )
     df = adapter.load(make_site())
