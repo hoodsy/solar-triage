@@ -55,6 +55,18 @@ def test_fetch_parse_and_upsample(monkeypatch):
     assert pd.isna(poa[pd.Timestamp("2025-10-09 15:00", tz="Pacific/Auckland")])
 
 
+def test_rejects_coarser_than_hourly_site(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: FakeResponse())
+    site = make_site()
+    site.interval = "2h"
+    import pytest
+
+    with pytest.raises(NotImplementedError):
+        OpenMeteoWeather(start="2025-10-09", end="2025-10-09").poa(site)
+
+
 def test_cache_roundtrip(tmp_path, monkeypatch):
     calls = []
 

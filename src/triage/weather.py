@@ -85,8 +85,13 @@ class OpenMeteoWeather:
         its hour's mean, preserving energy sums exactly (interpolation would
         smooth the shape but distort daily totals)."""
         steps = int(pd.Timedelta("1h") / pd.Timedelta(site.interval))
-        if steps <= 1:
-            return hourly
+        if steps == 1:
+            return hourly  # grids already match: nothing to do
+        if steps < 1:
+            raise NotImplementedError(
+                "site interval coarser than hourly weather data — needs "
+                "downsampling, which no site has required yet"
+            )
         grid = pd.date_range(
             hourly.index[0] - pd.Timedelta("1h") + pd.Timedelta(site.interval),
             hourly.index[-1],
