@@ -116,6 +116,10 @@ def detect_soiling(
     return None
 
 
+# NOTE: interval-count thresholds in the detectors (run >= 4, plateau_run >= 7/8,
+# the "/ 4" hours math) are tuned in 15-MINUTE units on 2107 referee data.
+# Re-tune before running a site with a different interval.
+
 # precedence order — first match wins
 RULES = [
     (Fault.OUTAGE, detect_outage),

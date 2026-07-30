@@ -10,11 +10,13 @@ def build_dataset(site: SiteConfig) -> pd.DataFrame:
 
 
 def build_daily(df: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
+    hours = pd.Timedelta(site.interval) / pd.Timedelta("1h")  # 0.25 for 15min
+    per_day = pd.Timedelta("1D") / pd.Timedelta(site.interval)  # 96.0 for 15min
     daily = pd.DataFrame(
         {
-            "actual_kwh": df["ac_power_kw"].resample("1D").sum(min_count=1) * 0.25,
-            "expected_kwh": df["expected_kw"].resample("1D").sum(min_count=1) * 0.25,
-            "coverage": df["ac_power_kw"].resample("1D").count() / 96,
+            "actual_kwh": df["ac_power_kw"].resample("1D").sum(min_count=1) * hours,
+            "expected_kwh": df["expected_kw"].resample("1D").sum(min_count=1) * hours,
+            "coverage": df["ac_power_kw"].resample("1D").count() / per_day,
         }
     )
     daily["pi"] = daily["actual_kwh"] / daily["expected_kwh"].where(
