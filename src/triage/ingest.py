@@ -3,9 +3,37 @@ import pandas as pd
 from triage.config import SiteConfig
 
 
+def clearsky_poa(index: pd.DatetimeIndex, site: SiteConfig) -> pd.Series:
+    """Clear-sky plane-of-array irradiance for sites without a POA sensor.
+
+    This is a *ceiling*, not a forecast: unlike measured POA, clouds do not
+    cancel out of PI for clear-sky sites, so their PI is weather-noisy and
+    flag thresholds need per-site retuning.
+    """
+    import pvlib  # imported lazily: measured-POA sites never pay for it
+
+    location = pvlib.location.Location(site.lat, site.lon, tz=site.tz)
+    solpos = location.get_solarposition(index)
+    clearsky = location.get_clearsky(index)
+    total = pvlib.irradiance.get_total_irradiance(
+        surface_tilt=site.tilt,
+        surface_azimuth=site.azimuth,
+        solar_zenith=solpos["apparent_zenith"],
+        solar_azimuth=solpos["azimuth"],
+        dni=clearsky["dni"],
+        ghi=clearsky["ghi"],
+        dhi=clearsky["dhi"],
+    )
+    return total["poa_global"]
+
+
 def build_dataset(site: SiteConfig) -> pd.DataFrame:
     df = site.source.load(site)
-    df["expected_kw"] = site.dc_capacity_kw * (df["poa_wm2"] / 1000.0) * site.derate
+    if "poa_wm2" in df.columns and df["poa_wm2"].notna().any():
+        poa = df["poa_wm2"]  # measured irradiance: weather cancels out of PI
+    else:
+        poa = clearsky_poa(df.index, site)
+    df["expected_kw"] = site.dc_capacity_kw * (poa / 1000.0) * site.derate
     return df
 
 
