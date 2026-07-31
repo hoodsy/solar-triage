@@ -33,6 +33,8 @@ class SiteConfig:
     # analysis window (None = open-ended)
     report_start: str | None = None
     report_end: str | None = None
+    # per-inverter electrical streams (empty = no sub-metering, no referee)
+    electrical: tuple[str, ...] = ()
     # tuning: generic defaults, overridable per site
     n_units: int = 1  # inverters/strings: real partial loss quantizes to capacity/n_units
     interval: str = "15min"
@@ -63,6 +65,11 @@ SITES: dict[str, SiteConfig] = {
         azimuth=193.0,
         report_start="2024-01-01",
         report_end="2024-11-30",
+        electrical=(  # vintage order mirrors the meter stream
+            "2107_electrical_data.csv",
+            "2107_electrical_data_2024.csv",
+            "2107_electrical_data_2025.csv",
+        ),
         source=PvdaqAdapter(
             data_dir=Path("data/2107/data"),
             meter=Stream(  # keep="last" default: newest vintage wins on overlap
@@ -119,6 +126,7 @@ SITES: dict[str, SiteConfig] = {
         azimuth=180.0,  # south-facing
         report_start="2020-04-01",
         report_end="2023-11-28",
+        electrical=("9069_electrical_ac.csv",),
         source=PvdaqAdapter(
             data_dir=Path("data/9069/data"),
             meter=Stream(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,6 +12,42 @@ from triage.adapters import SourceFile
 if TYPE_CHECKING:
     from triage.adapters import Stream
     from triage.config import SiteConfig
+
+# both PVDAQ inverter-column vintages: inv_01_ac_power_inv_149583 (2107) and
+# inverter_01_ac_power_(kw)_inv_150953 (9069)
+INV_COL = re.compile(r"(?:inverter|inv)_(\d+)_ac_power")
+
+
+def _localize(index: pd.DatetimeIndex, tz: str) -> pd.DatetimeIndex:
+    """PVDAQ naive-local stamps -> tz-aware; the unresolvable fall-back hour
+    becomes NaT (callers drop it)."""
+    return index.tz_localize(tz, ambiguous="NaT", nonexistent="shift_forward")
+
+
+def load_inverters(site: SiteConfig) -> pd.DataFrame:
+    """Per-inverter AC power (kW) on the site grid, columns inv_01..inv_NN,
+    from the files named in site.electrical (vintage order, newest wins)."""
+    frames = []
+    for name in site.electrical:
+        path = site.source.data_dir / name
+        header = pd.read_csv(path, nrows=0).columns
+        keep = {
+            c: f"inv_{int(m.group(1)):02d}"
+            for c in header
+            if (m := INV_COL.match(c))
+        }
+        df = pd.read_csv(  # usecols: the 9069 file is 1.6 GB of mixed channels
+            path,
+            usecols=["measured_on", *keep],
+            parse_dates=["measured_on"],
+            index_col="measured_on",
+        )
+        df.index = _localize(df.index, site.tz)
+        df = df[df.index.notna()]
+        frames.append(df.rename(columns=keep))
+    out = pd.concat(frames)
+    out = out[~out.index.duplicated(keep="last")].sort_index()
+    return out.resample(site.interval, closed="right", label="right").mean()
 
 
 @dataclass(frozen=True)
@@ -29,11 +66,7 @@ class PvdaqAdapter:
                 self.data_dir / f.name, parse_dates=[f.time_col], index_col=f.time_col
             )
             if f.tz is None:
-                df.index = df.index.tz_localize(
-                    site.tz,
-                    ambiguous="NaT",  # fall-back hour recorded once: unresolvable
-                    nonexistent="shift_forward",
-                )
+                df.index = _localize(df.index, site.tz)
             else:
                 df.index = df.index.tz_localize(f.tz).tz_convert(site.tz)
             df = df[df.index.notna()]
