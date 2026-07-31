@@ -16,6 +16,13 @@ def build_dataset(site: SiteConfig) -> tuple[pd.DataFrame, dict[str, int]]:
     # quality gate before anything derives from the sensors: masked
     # intervals become missing data and land in the data_gap machinery
     df, masked = clean(df, site, cs_poa)
+    # daytime-only loggers (PVDAQ lake sites): an absent row with the sun
+    # down is an implicit zero, not a gap — without this, coverage tops out
+    # near 0.5 and every day data_gaps. Daytime absences stay NaN, so real
+    # comms loss still reads as data_gap, and a no-op where nights exist.
+    if cs_poa is not None:
+        night = cs_poa.reindex(df.index) <= 0
+        df.loc[night & df["ac_power_kw"].isna(), "ac_power_kw"] = 0.0
     # trust ladder for the irradiance driving expected power:
     if "poa_wm2" in df.columns and df["poa_wm2"].notna().any():
         poa = df["poa_wm2"]  # 1. on-site sensor: weather cancels out of PI

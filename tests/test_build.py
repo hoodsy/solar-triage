@@ -97,3 +97,30 @@ def test_build_daily_sums_rain():
     )
     daily = build_daily(df, SimpleNamespace(interval="15min"))
     assert abs(daily["rain_mm"].iloc[0] - 9.6) < 1e-9
+
+
+def test_night_gaps_fill_as_zero_daytime_gaps_stay_nan():
+    # daytime-only logger: meter rows exist 08:00-16:00, nothing at night,
+    # plus a real 2h daytime comms gap that must NOT be filled
+    idx = pd.date_range("2024-06-01", periods=96, freq="15min", tz="US/Eastern")
+    kw = pd.Series(0.0, index=idx)
+    day = (idx.hour >= 8) & (idx.hour < 16)
+    kw[day] = 50.0
+    kw[~day] = float("nan")  # night: logger silent
+    gap = (idx.hour >= 10) & (idx.hour < 12)
+    kw[gap] = float("nan")  # daytime comms loss
+    site = SimpleNamespace(
+        source=StubSource(pd.DataFrame({"ac_power_kw": kw}, index=idx)),
+        weather=None,
+        lat=39.5,
+        lon=-76.7,
+        tilt=20.0,
+        azimuth=180.0,
+        tz="US/Eastern",
+        dc_capacity_kw=60.0,
+        ac_capacity_kw=55.0,
+        derate=0.8,
+    )
+    df = build_dataset(site)[0]
+    assert df["ac_power_kw"].between_time("00:00", "03:00").eq(0).all()  # filled
+    assert df["ac_power_kw"].between_time("10:30", "11:30").isna().all()  # kept

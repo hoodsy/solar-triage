@@ -44,7 +44,10 @@ class LakeColumn:
 @dataclass(frozen=True)
 class PvdaqLakeAdapter:
     data_dir: Path  # the fetched year=/month=/day= parquet tree
-    meter: LakeColumn  # becomes ac_power_kw
+    # one channel, or several summed (multi-meter plants like 1203's two
+    # revenue meters); the sum is NaN whenever ANY constituent is missing —
+    # half a plant reading as the whole plant would fake an outage
+    meter: LakeColumn | tuple[LakeColumn, ...]  # becomes ac_power_kw
     irradiance: LakeColumn | None = None  # becomes poa_wm2; None = model tier
     temperature: LakeColumn | None = None  # becomes temp_c
     inverter_scale: float = 1.0  # site.electrical metrics' AC power -> kW
@@ -68,15 +71,17 @@ class PvdaqLakeAdapter:
         return wide.reindex(columns=metrics)  # a fully-absent channel -> NaN
 
     def load(self, site: SiteConfig) -> pd.DataFrame:
-        spec = {"ac_power_kw": self.meter}
+        meters = self.meter if isinstance(self.meter, tuple) else (self.meter,)
+        spec: dict[str, tuple[LakeColumn, ...]] = {"ac_power_kw": meters}
         if self.irradiance is not None:
-            spec["poa_wm2"] = self.irradiance
+            spec["poa_wm2"] = (self.irradiance,)
         if self.temperature is not None:
-            spec["temp_c"] = self.temperature
-        df = self._read([c.metric for c in spec.values()], site)
+            spec["temp_c"] = (self.temperature,)
+        df = self._read([c.metric for cols in spec.values() for c in cols], site)
         out = pd.DataFrame(index=df.index)
-        for canonical, col in spec.items():
-            out[canonical] = (df[col.metric] + col.offset) * col.scale
+        for canonical, cols in spec.items():
+            parts = [(df[c.metric] + c.offset) * c.scale for c in cols]
+            out[canonical] = sum(parts)  # NaN poisons the sum, by design
         return out
 
     def load_inverters(self, site: SiteConfig) -> pd.DataFrame:

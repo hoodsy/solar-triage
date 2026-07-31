@@ -94,3 +94,24 @@ def test_load_inverters_fleet_order(lake_dir):
     assert list(inv.columns) == ["inv_01", "inv_02"]
     assert inv["inv_01"].dropna().iloc[0] == pytest.approx(2.5)
     assert str(inv.index.tz) == "US/Eastern"
+
+
+def test_multi_meter_sum_nan_when_half_missing(lake_dir):
+    # two 2.5 kW halves summed; nothing else configured
+    adapter = PvdaqLakeAdapter(
+        data_dir=lake_dir,
+        meter=(LakeColumn(M_INV1, scale=0.001), LakeColumn(M_INV2, scale=0.001)),
+    )
+    out = adapter.load(SITE)
+    assert out["ac_power_kw"].dropna().iloc[0] == pytest.approx(5.0)
+    # kill one half for an interior hour: the sum must go NaN, not halve
+    part = next((lake_dir / "year=2021" / "month=6" / "day=1").glob("*.parquet"))
+    df = pd.read_parquet(part)
+    inv1_rows = df.index[df["metric_id"] == M_INV1]
+    df = df.drop(inv1_rows[60:120])
+    df.to_parquet(part)
+    out = adapter.load(SITE)
+    gap = out["ac_power_kw"].loc[
+        "2021-06-01 01:15:00-04:00":"2021-06-01 01:45:00-04:00"
+    ]
+    assert gap.isna().all()
