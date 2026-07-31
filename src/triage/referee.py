@@ -129,6 +129,62 @@ def cross_check(result: pd.DataFrame, ref: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).set_index("date")
 
 
+def resolve(
+    result: pd.DataFrame,
+    ref: pd.DataFrame,
+    site,
+    df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Final labels: classifier output refined by the per-inverter channel.
+
+    Meter-only labels stand where the referee has nothing to add; the
+    classifier's honest `unclassified` days get attributed — inverter-subset
+    loss, plant-wide collapse, curtailment clamp (bright + flat + zero
+    divergence), or `mixed`. Sites without sub-metering never reach here.
+    """
+    rows = []
+    for day, row in result.iterrows():
+        key = day.normalize()
+        label, why = str(row["label"]), row["evidence"]
+        known = key in ref.index and pd.notna(ref.at[key, "fleet_median"])
+        if known and label == "unclassified":
+            n = ref.at[key, "n_divergent"]
+            share = ref.at[key, "div_share"]
+            fleet = ref.at[key, "fleet_median"]
+            if n >= 1 and pd.notna(share) and share >= 0.5:
+                label = "outage"
+                why = (
+                    f"{n}/{site.n_units} inverters divergent, explaining "
+                    f"{share:.0%} of the shortfall — was: {why}"
+                )
+            elif fleet <= FLEET_HEALTHY:
+                label = "outage"
+                why = f"plant-wide: fleet at {fleet:.0%} of trailing norm — was: {why}"
+            elif n >= 1:
+                label = "mixed"
+                why = (
+                    f"{n} divergent inverters explain only {share:.0%} — "
+                    f"loss plus something fleet-wide — was: {why}"
+                )
+            elif df is not None:
+                from triage.classify import day_csr, midday_plateau
+
+                intraday = df.loc[key.strftime("%Y-%m-%d")]
+                run, peak, _ = midday_plateau(intraday)
+                if (
+                    day_csr(intraday) >= 0.75
+                    and run >= 6
+                    and peak < 0.95 * site.ac_capacity_kw
+                ):
+                    label = "curtailment"
+                    why = (
+                        f"bright day clamped flat at {peak:.0f} kW with zero "
+                        f"divergent inverters — was: {why}"
+                    )
+        rows.append({"date": key.date(), "label": label, "evidence": why})
+    return pd.DataFrame(rows).set_index("date")
+
+
 def main() -> None:
     from triage.build import build
     from triage.classify import classify
@@ -141,10 +197,15 @@ def main() -> None:
     inv = load_inverters(ELECTRICAL[key], site.source.data_dir, site)
     ref = daily_divergence(inv)
     df, daily = build(site)
-    verdicts = cross_check(classify(daily, df, site), ref)
-    print(verdicts.to_string())
+    result = classify(daily, df, site)
+    verdicts = cross_check(result, ref)
+    final = resolve(result, ref, site, df)
+    print("final labels (classifier refined by per-inverter attribution):")
+    print(final["label"].value_counts().to_string())
+    with pd.option_context("display.max_colwidth", 100):
+        print(f"\n{final.to_string()}")
     counts = verdicts["verdict"].value_counts()
-    print(f"\n{counts.to_string()}")
+    print(f"\nverdicts on classifier claims: {counts.to_dict()}")
     if counts.get("refuted", 0):
         raise SystemExit(1)  # a refuted label fails the run loudly
 

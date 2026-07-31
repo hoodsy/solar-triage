@@ -41,6 +41,7 @@ def test_build_dataset_falls_back_to_clearsky_without_poa():
         azimuth=0.0,  # north-facing in the southern hemisphere
         tz="Pacific/Auckland",
         dc_capacity_kw=50.0,
+        ac_capacity_kw=48.0,
         derate=0.8,
     )
     exp = build_dataset(site)["expected_kw"]

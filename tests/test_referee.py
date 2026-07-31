@@ -84,3 +84,23 @@ def test_total_outage_confirmed_by_fleet_collapse():
         index=pd.DatetimeIndex([ref.index[35]], name="date"),
     )
     assert cross_check(result, ref).iloc[0]["verdict"] == "confirmed"
+
+
+def test_resolve_attributes_unclassified():
+    from types import SimpleNamespace
+
+    from triage.referee import resolve
+
+    inv = make_inv_kw(dead={"inv_03": [35]})
+    day36 = inv.index[0].normalize() + pd.Timedelta(days=36)
+    inv.loc[day36 : day36 + pd.Timedelta("23h45min")] *= 0.3  # plant-wide
+    ref = daily_divergence(inv)
+    result = pd.DataFrame(
+        {"label": ["unclassified"] * 2, "pi": 0.5, "evidence": "step"},
+        index=pd.DatetimeIndex([ref.index[35], ref.index[36]], name="date"),
+    )
+    final = resolve(result, ref, SimpleNamespace(n_units=4, ac_capacity_kw=4.0))
+    assert final.iloc[0]["label"] == "outage"  # inv_03 explains the shortfall
+    assert "1/4 inverters" in final.iloc[0]["evidence"]
+    assert final.iloc[1]["label"] == "outage"  # fleet collapse
+    assert "plant-wide" in final.iloc[1]["evidence"]

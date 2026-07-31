@@ -5,7 +5,10 @@ stream; failing intervals become NaN, so bad data flows into the existing
 coverage -> data_gap machinery instead of masquerading as performance.
 
 Zeros are never masked as stale: a flatline at zero in daylight is outage
-evidence (the dead-run rule's whole signal), not sensor stickiness.
+evidence (the dead-run rule's whole signal), not sensor stickiness. The
+same logic exempts the AC ceiling: a flatline at >=90% of ac_capacity is
+clipping physics (2107: 70 of 81 "stale" intervals were midday values at
+695-707 kW), so staleness only applies between the floor and the ceiling.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ POA_CSI_MAX = 1.5  # broken-cloud enhancement is real to ~1.3x clear sky
 
 
 def clean(
-    df: pd.DataFrame, clearsky_poa_wm2: pd.Series | None = None
+    df: pd.DataFrame, site, clearsky_poa_wm2: pd.Series | None = None
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     """Mask bad intervals in the measured streams; report counts per check.
 
@@ -36,8 +39,9 @@ def clean(
         masked[check] = n
 
     ac = df["ac_power_kw"]
-    mask("ac_power_kw", gaps.stale_values_diff(ac.dropna()).reindex(df.index) & (ac != 0), "meter stale")
-    mask("ac_power_kw", gaps.interpolation_diff(ac.dropna()).reindex(df.index) & (ac != 0), "meter interpolated")
+    judgeable = (ac != 0) & (ac < 0.9 * site.ac_capacity_kw)
+    mask("ac_power_kw", gaps.stale_values_diff(ac.dropna()).reindex(df.index) & judgeable, "meter stale")
+    mask("ac_power_kw", gaps.interpolation_diff(ac.dropna()).reindex(df.index) & judgeable, "meter interpolated")
 
     if "poa_wm2" in df.columns:
         poa = df["poa_wm2"]

@@ -14,7 +14,7 @@ def build_dataset(site: SiteConfig) -> pd.DataFrame:
     )
     # quality gate before anything derives from the sensors: masked
     # intervals become missing data and land in the data_gap machinery
-    df, masked = clean(df, cs_poa)
+    df, masked = clean(df, site, cs_poa)
     if masked:
         print("quality: masked " + "; ".join(f"{v} {k}" for k, v in masked.items()))
     # trust ladder for the irradiance driving expected power:
