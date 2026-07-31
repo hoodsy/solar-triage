@@ -9,6 +9,7 @@ from pathlib import Path
 
 from triage.adapters import LakeColumn, PvdaqLakeAdapter
 from triage.config import SiteConfig
+from triage.weather import OpenMeteoWeather
 
 SITE = SiteConfig(
     name="PVDAQ 1239 Presque Isle",
@@ -26,5 +27,12 @@ SITE = SiteConfig(
         temperature=LakeColumn(
             3016, offset=-32.0, scale=5 / 9, breaks=(("2018-08-05", 0.0, 1.0),)
         ),
+    ),
+    # measured-POA site: the met join only contributes rain_mm/snow_cm
+    # (sensor temp wins the ladder) — THE snow-rule site of the fleet
+    weather=OpenMeteoWeather(
+        start="2011-09-18",
+        end="2020-07-27",
+        cache_dir=Path("data/1239"),
     ),
 )
