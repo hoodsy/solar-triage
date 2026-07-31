@@ -180,7 +180,8 @@ def detect_pi_step(
     ):
         return (
             f"PI {recent.median():.2f} vs baseline {daily.at[day, 'pi_baseline']:.2f} "
-            f"for 3+ consecutive days — persistent step, partial loss suspected"
+            f"for 3+ consecutive days — persistent step; partial loss and "
+            f"uniform curtailment/drift both fit (sub-metering would resolve)"
         )
     return None
 
@@ -191,6 +192,11 @@ def detect_weather(
     """Model-missed clouds, not hardware. Two paths: broken sky (sawtooth
     ratio, well under the clear ceiling) and uniformly dark rain. csr guards
     the label from bright-day faults; NaN csr (sensor site) disables the rule."""
+    if "poa_wm2" in intraday.columns:
+        # measured-POA site: clouds cancel out of actual/expected, so a
+        # "model-missed clouds" story cannot occur — ratio chop there is
+        # hardware churn (9069: 28 of 33 weather labels were inverter trips)
+        return None
     csr = day_csr(intraday)
     if not csr < CSR_WEATHER:  # NaN-safe: no clearsky column -> never weather
         return None
@@ -261,13 +267,18 @@ def detect_soiling(
 # trailing-context ones: a dead day in the rain is still dead, but "3 low
 # days in a row" is also what a cloud spell looks like (weather slots in
 # ahead of detect_pi_step; thermal ahead of detect_partial).
+# detect_pi_step labels UNCLASSIFIED on purpose: a persistent daily-PI step
+# equally fits partial loss and fleet-uniform curtailment/drift, and no
+# meter-level signal separates them (9069 referee: 74 of 271 step claims
+# had zero divergent inverters, with chop and depth distributions identical
+# to the confirmed ones) — the evidence string carries what is known.
 RULES = [
     (Fault.OUTAGE, detect_dead),
     (Fault.THERMAL, detect_thermal),
     (Fault.OUTAGE, detect_partial),
     (Fault.CLIPPING, detect_clipping),
     (Fault.WEATHER, detect_weather),
-    (Fault.OUTAGE, detect_pi_step),
+    (Fault.UNCLASSIFIED, detect_pi_step),
     (Fault.SOILING, detect_soiling),
 ]
 

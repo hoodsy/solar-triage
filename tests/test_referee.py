@@ -48,3 +48,39 @@ def test_cross_check_verdicts():
     result2 = result.copy()
     result2.iloc[0, result2.columns.get_loc("label")] = "thermal"
     assert cross_check(result2, ref).iloc[0]["verdict"] == "refuted"
+
+
+def test_cloudy_day_with_standing_fault_does_not_refute_weather():
+    inv = make_inv_kw(dead={"inv_03": list(range(30, 40))})  # standing fault
+    day = inv.index[0].normalize() + pd.Timedelta(days=35)
+    healthy = [c for c in inv.columns if c != "inv_03"]
+    inv.loc[day : day + pd.Timedelta("23h45min"), healthy] *= 0.4  # clouds
+    ref = daily_divergence(inv)
+    result = pd.DataFrame(
+        {"label": ["weather"], "pi": 0.4, "evidence": "e"},
+        index=pd.DatetimeIndex([ref.index[35]], name="date"),
+    )
+    v = cross_check(result, ref)
+    assert v.iloc[0]["verdict"] == "confirmed"  # clouds dominate the deficit
+
+
+def test_clear_day_fault_still_refutes_weather():
+    ref = daily_divergence(make_inv_kw(n_inv=4, dead={"inv_03": [35]}))
+    result = pd.DataFrame(
+        {"label": ["weather"], "pi": 0.7, "evidence": "e"},
+        index=pd.DatetimeIndex([ref.index[35]], name="date"),
+    )
+    v = cross_check(result, ref)
+    assert v.iloc[0]["verdict"] == "refuted"  # the dead inverter IS the story
+
+
+def test_total_outage_confirmed_by_fleet_collapse():
+    inv = make_inv_kw()
+    day = inv.index[0].normalize() + pd.Timedelta(days=35)
+    inv.loc[day : day + pd.Timedelta("23h45min")] = 0.0  # whole plant dark
+    ref = daily_divergence(inv)
+    result = pd.DataFrame(
+        {"label": ["outage"], "pi": 0.05, "evidence": "e"},
+        index=pd.DatetimeIndex([ref.index[35]], name="date"),
+    )
+    assert cross_check(result, ref).iloc[0]["verdict"] == "confirmed"

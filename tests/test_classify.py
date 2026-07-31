@@ -232,3 +232,19 @@ def test_lone_data_gap_is_its_own_event():
     r = make_result(["data_gap"])
     ev = events(r, make_events_daily(1), EV_SITE)
     assert len(ev) == 1 and ev.iloc[0]["label"] == "data_gap"
+
+
+def test_weather_inert_on_measured_poa_site():
+    # sensor site: clouds cancel out of the ratio, chop there is hardware
+    actual = [0.9, 0.4, 0.9, 0.4, 0.9, 0.4, 0.9, 0.4]
+    day = make_intraday(actual, [1.0] * 8, clearsky=[1.3] * 8)
+    day["poa_wm2"] = 800.0
+    daily = make_daily_with_rain(1, rain=4.2)
+    assert detect_weather(daily.index[0], day, daily, WEATHER_SITE) is None
+
+
+def test_pi_step_labels_unclassified():
+    from triage.classify import RULES, detect_pi_step
+
+    label = next(lb for lb, fn in RULES if fn is detect_pi_step)
+    assert label == Fault.UNCLASSIFIED

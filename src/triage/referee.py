@@ -75,19 +75,29 @@ def daily_divergence(inv_kw: pd.DataFrame) -> pd.DataFrame:
     divergent = norm.lt((1 - DIVERGENCE_MARGIN) * fleet, axis=0).where(
         judgeable, False
     )
+    # attribution: the share of the plant's shortfall (vs trailing norms) the
+    # divergent inverters explain BEYOND the fleet-wide level. On a cloudy day
+    # with one dead inverter the clouds dominate and the share is tiny; on a
+    # clear day the dead inverter is the whole story and the share is ~1.
+    expected = trail.mul(fleet, axis=0)  # fleet-scaled per-inverter expectation
+    div_short = (expected - daily).clip(lower=0).where(divergent, 0.0).sum(axis=1)
+    plant_short = (trail - daily).clip(lower=0).sum(axis=1)
     return pd.DataFrame(
         {
             "n_divergent": divergent.sum(axis=1).astype(int),
             "divergent": divergent.apply(lambda r: list(r.index[r]), axis=1),
             "fleet_median": fleet,
+            "div_share": (div_short / plant_short).where(plant_short > 0),
         }
     )
 
 
 def cross_check(result: pd.DataFrame, ref: pd.DataFrame) -> pd.DataFrame:
     """Grade classifier claims. outage wants divergence; thermal/weather/
-    data_gap want none; soiling/clipping/unclassified are fleet-uniform or
-    ambiguous — uncheckable."""
+    data_gap are refuted only when divergent inverters explain most of the
+    day's shortfall (a standing dead inverter under a cloudy sky doesn't
+    invalidate the sky story); soiling/clipping/unclassified are fleet-
+    uniform or ambiguous — uncheckable."""
     rows = []
     for day, row in result.iterrows():
         key = day.normalize()
@@ -96,10 +106,15 @@ def cross_check(result: pd.DataFrame, ref: pd.DataFrame) -> pd.DataFrame:
             verdict = "uncheckable"
         else:
             n = ref.at[key, "n_divergent"]
+            share = ref.at[key, "div_share"]
+            faulty = n >= 1 and pd.notna(share) and share >= 0.5
+            collapsed = ref.at[key, "fleet_median"] <= FLEET_HEALTHY
             if row["label"] == "outage":
-                verdict = "confirmed" if n >= 1 else "refuted"
+                # a TOTAL outage has zero divergence by definition — the fleet
+                # collapsing with the plant corroborates, it doesn't refute
+                verdict = "confirmed" if n >= 1 or collapsed else "refuted"
             elif row["label"] in ("thermal", "weather", "data_gap"):
-                verdict = "confirmed" if n == 0 else "refuted"
+                verdict = "refuted" if faulty else "confirmed"
             else:
                 verdict = "uncheckable"
         rows.append(
