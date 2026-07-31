@@ -5,7 +5,7 @@ import pandas as pd
 from triage.adapters.pvdaq import load_inverters
 from triage.build import add_flags, build_daily, build_dataset
 from triage.classify import classify, events
-from triage.config import SITES
+from triage.sites import SITES
 from triage.referee import daily_divergence, resolve
 from triage.report import report
 from triage.trend import daily_insolation, daily_pi, degradation, soiling

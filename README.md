@@ -30,7 +30,7 @@ TRIAGE_SITE=sn120 uv run triage            # or set the env var directly
 ```
 
 One process serves one site, chosen by the `TRIAGE_SITE` env var (keys of
-`SITES` in `triage/config.py`). Each deployed device carries its own `.env`
+`SITES` in `triage/sites/`, one module per site). Each deployed device carries its own `.env`
 (copy `.env.example`; gitignored) and uv's `--env-file` loads it — the code
 itself only ever reads the environment.
 
@@ -42,7 +42,8 @@ Output: summary tables on stdout and `reports/report.html` with season
 energy, PI/flags, data quality, events, final labels, referee verdicts,
 slow trends, and per-day evidence charts.
 
-Onboarding a site is config-only: add a `SiteConfig` entry with either a
+Onboarding a site is config-only: add a module under `triage/sites/` with a
+`SiteConfig` named `SITE`, register it in `triage/sites/__init__.py`, using either a
 `PvdaqAdapter` (declarative file specs: per-file timestamp column/timezone,
 dedupe precedence, native resolution, optional temperature stream) or a
 `SolarNetworkAdapter` (node + source ID, fixed or trailing window). Sites
