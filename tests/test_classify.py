@@ -379,3 +379,35 @@ def test_cloud_intermittent_bright_chop():
     # measured-POA site: chop means hardware, rule must stay silent
     with_poa = intraday.assign(poa_wm2=700.0)
     assert detect_cloud_intermittent(day, with_poa, daily, site) is None
+
+
+def test_unflagged_clipped_day_gets_shape_census_label():
+    from triage.classify import classify
+
+    tz = "US/Pacific"
+    idx = pd.date_range("2024-06-01", periods=2 * 96, freq="15min", tz=tz)
+    df = pd.DataFrame(index=idx)
+    # day 1: healthy bell; day 2: same bell clipped flat at 0.95 ceiling
+    hours = (idx.hour + idx.minute / 60).values
+    bell = np.clip(np.sin((hours - 6) * np.pi / 12), 0, None) * 1.3
+    df["expected_kw"] = bell
+    actual = bell.copy()
+    day2 = idx.date == idx[96].date()
+    actual[day2] = np.minimum(actual[day2], 0.95)
+    df["ac_power_kw"] = actual
+    daily = pd.DataFrame(
+        {
+            "pi": [1.0, 0.97],  # clipping costs ~3%: never flags
+            "coverage": 1.0,
+            "flagged": False,
+            "pi_baseline": 1.0,
+        },
+        index=pd.DatetimeIndex([idx[0].normalize(), idx[96].normalize()]),
+    )
+    site = SimpleNamespace(
+        dc_capacity_kw=1.3, ac_capacity_kw=0.95, coverage_min=0.8,
+        interval="15min", n_units=1,
+    )
+    out = classify(daily, df, site)
+    assert list(out["label"]) == ["clipping"]
+    assert out.index[0].date() == idx[96].date()

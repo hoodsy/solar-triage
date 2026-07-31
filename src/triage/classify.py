@@ -504,9 +504,16 @@ def classify(daily: pd.DataFrame, df: pd.DataFrame, site: SiteConfig) -> pd.Data
     """
     For each flagged day, select it and the trailing daily context,
     run rules in precedence order, first match wins.
+
+    Unflagged days additionally get the clipping shape census: chronic
+    clipping never flags — it costs only a few percent (under the PI
+    ceiling) and sits INSIDE the rolling baseline on a site that clips
+    routinely. The plateau shape is the evidence, not the deficit
+    (1278: 37 clipping days, zero of them flagged).
     """
     rows = []
-    for day in daily.index[daily["flagged"].fillna(False)]:
+    flagged = daily["flagged"].fillna(False)
+    for day in daily.index[flagged]:
         label, evidence = classify_day(day, day_slice(df, day), daily, site)
         rows.append(
             {
@@ -516,9 +523,21 @@ def classify(daily: pd.DataFrame, df: pd.DataFrame, site: SiteConfig) -> pd.Data
                 "evidence": evidence,
             }
         )
+    for day in daily.index[~flagged]:
+        if daily.at[day, "coverage"] < site.coverage_min:
+            continue
+        if evidence := detect_clipping(day, day_slice(df, day), daily, site):
+            rows.append(
+                {
+                    "date": day,
+                    "label": Fault.CLIPPING,
+                    "pi": daily.at[day, "pi"],
+                    "evidence": evidence,
+                }
+            )
     if not rows:  # a healthy window flags nothing; keep schema AND index type
         return pd.DataFrame(
             columns=["label", "pi", "evidence"],
             index=pd.DatetimeIndex([], name="date"),
         )
-    return pd.DataFrame(rows).set_index("date")
+    return pd.DataFrame(rows).set_index("date").sort_index()
