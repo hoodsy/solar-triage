@@ -63,7 +63,7 @@ def test_report_sections_render(tmp_path):
     assert "meter stale" in html
     assert "+0.10 %/yr" in html
     # precedence text derived from RULES, never hand-written
-    assert "data_gap &gt; outage &gt; thermal" in html
+    assert "data_gap &gt; snow &gt; outage &gt; thermal" in html
     assert "classifier only" in html.lower()
     assert "Verdicts on classifier claims" not in html
 

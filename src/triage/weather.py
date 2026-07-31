@@ -64,10 +64,12 @@ class OpenMeteoWeather:
         return self._upsample(hourly, site)
 
     def met(self, site: SiteConfig) -> pd.DataFrame:
-        """Hourly met frame (temp_c, rain_mm) on the site clock; cached like
-        poa. temp_c is the on-the-hour reading, rain_mm the preceding-hour sum."""
+        """Hourly met frame (temp_c, rain_mm, snow_cm) on the site clock;
+        cached like poa. temp_c is the on-the-hour reading, rain_mm/snow_cm
+        the preceding-hour sums. Cache prefix carries a v2: the column set
+        grew snow_cm, and stale caches would silently lack it."""
         return cached_csv(
-            self._cache_path("openmeteo_met", site),
+            self._cache_path("openmeteo_met2", site),
             site.tz,
             lambda: self._fetch_met(site),
         )
@@ -99,9 +101,13 @@ class OpenMeteoWeather:
         )
 
     def _fetch_met(self, site: SiteConfig) -> pd.DataFrame:
-        data = self._get(site, "temperature_2m,precipitation")
+        data = self._get(site, "temperature_2m,precipitation,snowfall")
         return pd.DataFrame(
-            {"temp_c": data["temperature_2m"], "rain_mm": data["precipitation"]},
+            {
+                "temp_c": data["temperature_2m"],
+                "rain_mm": data["precipitation"],
+                "snow_cm": data["snowfall"],
+            },
             index=self._index(data, site),
             dtype=float,
         )
@@ -131,10 +137,13 @@ class OpenMeteoWeather:
 
     @staticmethod
     def _met_to_grid(met: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
-        """Hourly met -> site.interval. temp is a level (bfill); rain is a sum
-        (bfill / steps so daily totals survive resampling)."""
+        """Hourly met -> site.interval. temp is a level (bfill); rain and
+        snow are sums (bfill / steps so daily totals survive resampling)."""
         steps = int(pd.Timedelta("1h") / pd.Timedelta(site.interval))
         out = OpenMeteoWeather._upsample(met, site)
         if steps > 1:
-            out = out.assign(rain_mm=out["rain_mm"] / steps)
+            sums = {
+                c: out[c] / steps for c in ("rain_mm", "snow_cm") if c in out
+            }
+            out = out.assign(**sums)
         return out

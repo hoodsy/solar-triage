@@ -254,7 +254,7 @@ def test_precedence_derived_from_rules():
     from triage.classify import precedence
 
     assert precedence() == [
-        "data_gap", "outage", "thermal", "clipping",
+        "data_gap", "snow", "outage", "thermal", "clipping",
         "weather", "unclassified", "soiling",
     ]
 
@@ -284,3 +284,59 @@ def test_day_slice_empty_for_silent_day():
     df = pd.DataFrame({"ac_power_kw": 1.0}, index=idx)
     assert len(day_slice(df, pd.Timestamp("2025-01-15", tz="UTC"))) == 8
     assert day_slice(df, pd.Timestamp("2025-02-01", tz="UTC")).empty
+
+
+def make_snow_daily(snow_by_day, pi=0.05):
+    idx = pd.date_range("2024-01-01", periods=10, freq="1D", tz="US/Eastern")
+    daily = pd.DataFrame({"pi": 1.0, "coverage": 1.0, "snow_cm": 0.0}, index=idx)
+    for d, cm in snow_by_day.items():
+        daily.loc[idx[d], "snow_cm"] = cm
+    daily.loc[idx[9], "pi"] = pi
+    return idx[9], daily
+
+
+def make_cold_intraday(day, temp=-3.0):
+    idx = pd.date_range(day, periods=96, freq="15min")
+    return pd.DataFrame(
+        {"ac_power_kw": 0.05, "expected_kw": 5.0, "temp_c": temp}, index=idx
+    )
+
+
+def test_snow_burial_detected():
+    from triage.classify import detect_snow
+
+    day, daily = make_snow_daily({8: 4.0})  # 4 cm yesterday
+    site = SimpleNamespace(dc_capacity_kw=10.0, interval="15min")
+    ev = detect_snow(day, make_cold_intraday(day), daily, site)
+    assert ev is not None and "burial" in ev
+
+
+def test_snow_needs_cold_and_collapse():
+    from triage.classify import detect_snow
+
+    site = SimpleNamespace(dc_capacity_kw=10.0, interval="15min")
+    day, daily = make_snow_daily({8: 4.0}, pi=0.8)  # snow but mild dip only
+    assert detect_snow(day, make_cold_intraday(day), daily, site) is None
+    day, daily = make_snow_daily({8: 4.0})
+    warm = make_cold_intraday(day, temp=12.0)  # snow melts same-day
+    assert detect_snow(day, warm, daily, site) is None
+    day, daily = make_snow_daily({})  # cold collapse without any snowfall
+    assert detect_snow(day, make_cold_intraday(day), daily, site) is None
+
+
+def test_deep_overcast_is_weather_without_rain():
+    from triage.classify import detect_weather
+
+    day = pd.Timestamp("2024-06-01", tz="US/Eastern")
+    idx = pd.date_range(day, periods=96, freq="15min")
+    # smooth 40% of clear ceiling all day, no rain anywhere
+    intraday = pd.DataFrame(
+        {"ac_power_kw": 2.0, "expected_kw": 2.2, "clearsky_kw": 5.0}, index=idx
+    )
+    daily = pd.DataFrame(
+        {"pi": 0.9, "coverage": 1.0, "rain_mm": 0.0},
+        index=pd.DatetimeIndex([day]),
+    )
+    site = SimpleNamespace(dc_capacity_kw=8.0, ac_capacity_kw=7.0, interval="15min")
+    ev = detect_weather(day, intraday, daily, site)
+    assert ev is not None and "deep overcast" in ev

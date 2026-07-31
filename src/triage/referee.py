@@ -80,17 +80,25 @@ def resolve(
     divergence — or total collapse, which has zero divergence by definition;
     thermal/weather are refuted only when divergent inverters own the day's
     shortfall). Its honest `unclassified` days get attributed: inverter-subset
-    outage, plant-wide collapse, mixed, or curtailment (bright flat clamp,
-    zero divergence — needs `df` for the intraday shape).
+    outage, plant-wide collapse, or curtailment (bright flat clamp, zero
+    divergence — needs `df` for the intraday shape). Underexplained days —
+    some divergence but the fleet-wide residual dominates — get a primary
+    label for the residual (weather / curtailment via the intraday shape,
+    else unclassified) with label_2="outage" for the divergent share; the
+    MIXED bucket this replaces hid exactly that split. The residual check
+    requires a real positive share: div_share is NaN when the plant was not
+    short at daily energy at all, and "loss plus something fleet-wide" was
+    unjustified there (135 of 370 mixed labels were that artifact).
     """
     if result.empty:
         return pd.DataFrame(
-            columns=[*result.columns, "verdict"], index=result.index
+            columns=[*result.columns, "label_2", "verdict"], index=result.index
         )
     rows = []
     for day, row in result.iterrows():
         key = day.normalize()
         label, why = row["label"], row["evidence"]
+        label_2 = None
         verdict = "uncheckable"
         if key in ref.index and pd.notna(ref.at[key, "fleet_median"]):
             n = ref.at[key, "n_divergent"]
@@ -100,7 +108,7 @@ def resolve(
             collapsed = fleet <= FLEET_HEALTHY
             if label == Fault.OUTAGE:
                 verdict = "confirmed" if n >= 1 or collapsed else "refuted"
-            elif label in (Fault.THERMAL, Fault.WEATHER):
+            elif label in (Fault.THERMAL, Fault.WEATHER, Fault.SNOW):
                 verdict = "refuted" if faulty else "confirmed"
             elif label == Fault.UNCLASSIFIED:
                 if faulty:
@@ -115,11 +123,29 @@ def resolve(
                         f"plant-wide: fleet at {fleet:.0%} of trailing norm "
                         f"— was: {why}"
                     )
-                elif n >= 1:
-                    label, verdict = Fault.MIXED, "attributed"
+                elif n >= 1 and pd.notna(share) and share > 0:
+                    # minor loss + dominant fleet-wide residual: name the
+                    # residual from the intraday shape, keep the loss as
+                    # the secondary label
+                    residual = Fault.UNCLASSIFIED
+                    detail = ""
+                    if df is not None:
+                        intraday = day_slice(df, day)
+                        csr = day_csr(intraday)
+                        run, peak, _ = midday_plateau(intraday)
+                        if csr < CSR_WEATHER:
+                            residual = Fault.WEATHER
+                            detail = f" (dim day: {csr:.0%} of clear ceiling)"
+                        elif (
+                            run >= CURTAIL_PLATEAU_H * per_hour(site)
+                            and peak < CEILING_FRAC * site.ac_capacity_kw
+                        ):
+                            residual = Fault.CURTAILMENT
+                            detail = f" (bright day clamped at {peak:.0f} kW)"
+                    label, label_2, verdict = residual, Fault.OUTAGE, "attributed"
                     why = (
-                        f"{n} divergent inverters explain only {share:.0%} — "
-                        f"loss plus something fleet-wide — was: {why}"
+                        f"fleet-wide {residual}{detail} plus {n} divergent "
+                        f"inverters explaining {share:.0%} — was: {why}"
                     )
                 elif df is not None:
                     intraday = day_slice(df, day)
@@ -135,6 +161,12 @@ def resolve(
                             f"zero divergent inverters — was: {why}"
                         )
         rows.append(
-            {"label": label, "pi": row["pi"], "evidence": why, "verdict": verdict}
+            {
+                "label": label,
+                "label_2": label_2,
+                "pi": row["pi"],
+                "evidence": why,
+                "verdict": verdict,
+            }
         )
     return pd.DataFrame(rows, index=result.index)

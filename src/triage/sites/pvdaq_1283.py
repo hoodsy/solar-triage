@@ -13,6 +13,7 @@ from pathlib import Path
 
 from triage.adapters import LakeColumn, PvdaqLakeAdapter
 from triage.config import SiteConfig
+from triage.weather import OpenMeteoWeather
 
 SITE = SiteConfig(
     name="PVDAQ 1283 NREL RSF2",
@@ -28,5 +29,12 @@ SITE = SiteConfig(
         meter=LakeColumn(1040, scale=1.0, breaks=(("2018-08-05", 0.0, 0.001),)),
         irradiance=LakeColumn(1055),
         temperature=LakeColumn(1053),  # already °C
+    ),
+    # measured-POA site: the met join only contributes rain_mm/snow_cm
+    # (sensor temp wins the ladder) — Golden winters need the snow rule
+    weather=OpenMeteoWeather(
+        start="2013-01-01",
+        end="2022-02-09",
+        cache_dir=Path("data/1283"),
     ),
 )

@@ -94,15 +94,44 @@ def test_resolve_attributes_unclassified():
     assert (final["pi"] == 0.5).all()
 
 
-def test_resolve_mixed_when_divergence_underexplains():
+def test_underexplained_day_gets_residual_primary_plus_outage_secondary():
     inv = make_inv_kw(dead={"inv_03": [35]})
     day = inv.index[0].normalize() + pd.Timedelta(days=35)
     healthy = [c for c in inv.columns if c != "inv_03"]
     inv.loc[day : day + pd.Timedelta("23h45min"), healthy] *= 0.55  # big uniform dip
     ref = daily_divergence(inv)
+    # without df the residual is unnameable: primary stays unclassified
     final = resolve(make_result({35: "unclassified"}, ref), ref, REF_SITE)
-    assert final.iloc[0]["label"] == "mixed"
-    assert "explain only" in final.iloc[0]["evidence"]
+    assert final.iloc[0]["label"] == "unclassified"
+    assert final.iloc[0]["label_2"] == "outage"
+    assert final.iloc[0]["verdict"] == "attributed"
+    assert "fleet-wide" in final.iloc[0]["evidence"]
+    # with a dim intraday the residual is named weather
+    idx = pd.date_range(day + pd.Timedelta("8h"), periods=40, freq="15min")
+    df = pd.DataFrame(
+        {"ac_power_kw": 1.0, "clearsky_kw": 3.0},  # 33% of clear ceiling
+        index=idx,
+    )
+    final = resolve(make_result({35: "unclassified"}, ref), ref, REF_SITE, df)
+    assert final.iloc[0]["label"] == "weather"
+    assert final.iloc[0]["label_2"] == "outage"
+
+
+def test_divergence_without_plant_shortfall_is_not_split():
+    # inv_03 relatively low but still ABOVE its own trailing norm while the
+    # others over-produce: nobody is short, div_share is NaN — "loss plus
+    # fleet-wide" is unjustified (the 135-row mixed artifact)
+    inv = make_inv_kw()
+    day = inv.index[0].normalize() + pd.Timedelta(days=35)
+    span = slice(day, day + pd.Timedelta("23h45min"))
+    healthy = [c for c in inv.columns if c != "inv_03"]
+    inv.loc[span, healthy] *= 1.5
+    inv.loc[span, "inv_03"] *= 1.2  # relatively divergent, absolutely fine
+    ref = daily_divergence(inv)
+    final = resolve(make_result({35: "unclassified"}, ref), ref, REF_SITE)
+    assert final.iloc[0]["label"] == "unclassified"
+    assert final.iloc[0]["label_2"] is None
+    assert final.iloc[0]["verdict"] == "uncheckable"
 
 
 def test_resolve_curtailment_needs_bright_flat_zero_divergence():
@@ -129,5 +158,5 @@ def test_resolve_empty_result_keeps_schema():
         index=pd.DatetimeIndex([], name="date"),
     )
     final = resolve(empty, ref, REF_SITE)
-    assert list(final.columns) == ["label", "pi", "evidence", "verdict"]
+    assert list(final.columns) == ["label", "pi", "evidence", "label_2", "verdict"]
     assert final.empty

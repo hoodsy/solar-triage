@@ -139,9 +139,12 @@ def report(
         verdict_txt = (
             f" · referee: {row['verdict']}" if graded and pd.notna(row["verdict"]) else ""
         )
+        label_txt = str(row["label"])
+        if "label_2" in final.columns and pd.notna(row["label_2"]):
+            label_txt += f" + {row['label_2']}"
         parts.append(
             card(
-                f"<h3>{day.date()} — {row['label']} ({pi_txt}){verdict_txt}</h3>"
+                f"<h3>{day.date()} — {label_txt} ({pi_txt}){verdict_txt}</h3>"
                 f'<p class="evidence">{row["evidence"]}</p>'
                 + plot_day(day_slice(df, day), site).to_html(
                     full_html=False, include_plotlyjs=False

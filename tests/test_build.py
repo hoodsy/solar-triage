@@ -124,3 +124,22 @@ def test_night_gaps_fill_as_zero_daytime_gaps_stay_nan():
     df = build_dataset(site)[0]
     assert df["ac_power_kw"].between_time("00:00", "03:00").eq(0).all()  # filled
     assert df["ac_power_kw"].between_time("10:30", "11:30").isna().all()  # kept
+
+
+def test_absolute_pi_guard_blocks_inflated_baseline_flags():
+    # 40 days of model-bias PI 1.3, then a return to honest PI 1.0: without
+    # the guard the 1.0 days flag against the 1.3 baseline
+    idx = pd.date_range("2024-01-01", periods=60, freq="1D", tz="US/Pacific")
+    pi = pd.Series(1.3, index=idx)
+    pi.iloc[40:] = 1.0
+    daily = pd.DataFrame(
+        {"pi": pi, "coverage": 1.0, "actual_kwh": 100.0, "expected_kwh": 100.0},
+        index=idx,
+    )
+    site = SimpleNamespace(coverage_min=0.8, flag_threshold=0.92, window=30)
+    out = add_flags(daily, site)
+    assert not out["flagged"].iloc[40:].any()  # PI 1.0 is never a fault
+    # a genuinely bad day still flags
+    daily.loc[idx[50], "pi"] = 0.4
+    out = add_flags(daily, site)
+    assert bool(out["flagged"].loc[idx[50]])

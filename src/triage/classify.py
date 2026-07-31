@@ -15,12 +15,14 @@ class Fault(StrEnum):
     CLIPPING = "clipping"
     SOILING = "soiling"
     WEATHER = "weather"
+    SNOW = "snow"
     THERMAL = "thermal"
     DATA_GAP = "data_gap"
     UNCLASSIFIED = "unclassified"
-    # referee-attribution vocabulary — the classifier never emits these two;
-    # they exist so resolve() on sub-metered sites shares the same enum
-    MIXED = "mixed"
+    # referee-attribution vocabulary — the classifier never emits this;
+    # it exists so resolve() on sub-metered sites shares the same enum.
+    # (MIXED is gone: underexplained days now carry a primary label for the
+    # fleet-wide residual plus label_2="outage" for the divergent share.)
     CURTAILMENT = "curtailment"
 
 
@@ -41,6 +43,7 @@ def day_slice(df: pd.DataFrame, day: pd.Timestamp) -> pd.DataFrame:
 # fault days (chop_mad: broken cloud 0.18 median vs real-fault 0.055 median)
 CSR_WEATHER = 0.75  # below: meaningfully less sun than a clear day
 CSR_RAINY = 0.65  # below + measurable rain: dim enough that rain explains it
+CSR_DIM = 0.50  # below + smooth: overcast deeper than any model error
 # (tuned up from 0.30 on referee sweep 2026-07: smooth rainy days at csr ~0.6
 # were falling through to pi-step and claiming false outages)
 CHOP_BROKEN_SKY = 0.10  # hourly ratio sawtooth threshold
@@ -122,6 +125,42 @@ def detect_dead(
             f"(~{run / per_hour(site):.1f}h) with expected >20% of capacity"
         )
     return None
+
+
+# snow thresholds, set on the 2026-07 bucket study (705 days across
+# 1239/1433/1283: pi median 0.01, tmax median -0.5 °C, fresh trailing snow)
+SNOW_3D_CM = 1.0  # trailing 3-day snowfall that can bury a panel
+SNOW_7D_CM = 5.0  # or a heavier week: lingering cover outlasts the storm
+SNOW_TMAX_C = 5.0  # above this the cover melts off same-day
+SNOW_PI = 0.6  # burial suppresses deeply — mild dips are not snow
+
+
+def detect_snow(
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
+) -> str | None:
+    """Panel burial: fresh or accumulated snowfall + cold + deep collapse.
+    Runs ahead of the outage rules — after a storm, burial is the likelier
+    story than hardware, and the meter cannot tell them apart anyway. Sites
+    without a snow_cm stream (no Open-Meteo met join) never match."""
+    if "snow_cm" not in daily.columns:
+        return None
+    snow3 = daily.loc[:day, "snow_cm"].tail(3).sum()
+    snow7 = daily.loc[:day, "snow_cm"].tail(7).sum()
+    if not (snow3 >= SNOW_3D_CM or snow7 >= SNOW_7D_CM):
+        return None
+    pi = daily.at[day, "pi"]
+    if not pi < SNOW_PI:  # NaN-safe
+        return None
+    tmax = (
+        intraday["temp_c"].max() if "temp_c" in intraday.columns else float("nan")
+    )
+    if tmax >= SNOW_TMAX_C:  # NaN tmax passes: a gap day shouldn't veto snow
+        return None
+    tmax_txt = f"day max {tmax:.0f} °C" if pd.notna(tmax) else "no temp reading"
+    return (
+        f"PI {pi:.2f} with {snow3:.1f} cm snow in 3 days ({snow7:.1f} cm in 7) "
+        f"and {tmax_txt} — panel burial, not hardware"
+    )
 
 
 TMAX_HOT_C = 32.0  # a thermal story needs a hot day
@@ -242,6 +281,21 @@ def detect_weather(
             f"dim rain day — output {csr:.0%} of clear-sky ceiling, "
             f"{rain:.1f} mm rain"
         )
+    # deep smooth overcast, no rain required: at half the clear ceiling the
+    # sky itself is the explanation — reanalysis under-calls cloud depth on
+    # these days (728 unclassified at csr med 0.48 / chop med 0.044 in the
+    # 2026-07 bucket study). Guard: the MODEL must also have seen cloud
+    # (expected well under clearsky) — csr is actual/ceiling, so a smooth
+    # fault on a bright day is equally dim by csr alone, and only the
+    # model's own cloud factor separates the two stories.
+    ceiling = intraday["clearsky_kw"].sum()
+    model_csr = intraday["expected_kw"].sum() / ceiling if ceiling > 0 else 1.0
+    if csr < CSR_DIM and model_csr < CSR_WEATHER:
+        return (
+            f"deep overcast — output {csr:.0%} of clear-sky ceiling with the "
+            f"model itself at {model_csr:.0%}, smooth hourly ratio "
+            f"(chop ±{chop:.2f}); model missed cloud depth"
+        )
     return None
 
 
@@ -294,6 +348,10 @@ def detect_soiling(
 # had zero divergent inverters, with chop and depth distributions identical
 # to the confirmed ones) — the evidence string carries what is known.
 RULES = [
+    # snow leads the fault rules: a buried panel also trips the dead-run
+    # test (the model still expects power), and after a storm burial is the
+    # likelier story — the meter cannot separate them, the snowfall can
+    (Fault.SNOW, detect_snow),
     (Fault.OUTAGE, detect_dead),
     (Fault.THERMAL, detect_thermal),
     (Fault.OUTAGE, detect_partial),

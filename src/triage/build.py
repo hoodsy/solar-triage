@@ -56,17 +56,20 @@ def build_daily(df: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
             "actual_kwh": df["ac_power_kw"].resample("1D").sum(min_count=1) * hours,
             "expected_kwh": df["expected_kw"].resample("1D").sum(min_count=1) * hours,
             "coverage": both.resample("1D").sum() / per_day,
-            **(
-                {"rain_mm": df["rain_mm"].resample("1D").sum(min_count=1)}
-                if "rain_mm" in df.columns
-                else {}
-            ),
+            **{
+                c: df[c].resample("1D").sum(min_count=1)
+                for c in ("rain_mm", "snow_cm")
+                if c in df.columns
+            },
         }
     )
     aligned_actual = df["ac_power_kw"].where(both).resample("1D").sum(min_count=1)
     aligned_expected = df["expected_kw"].where(both).resample("1D").sum(min_count=1)
     daily["pi"] = aligned_actual / aligned_expected.where(aligned_expected > 0)
     return daily
+
+
+PI_CEILING = 0.95  # absolute-PI guard: a day at/above this is never a fault
 
 
 def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
@@ -77,6 +80,14 @@ def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
     # ignore flagged days in the pi_baseline; iterate to a fixpoint — excluding
     # flagged (low) days only ever raises the median, so this converges. Two
     # passes are not enough for outages longer than ~half a window.
+    #
+    # the PI_CEILING guard exists because baseline-relative alone is not
+    # enough on weather-model sites: reanalysis bias runs PI at 1.1-1.4 for
+    # months, the rolling median follows it up (medians of 1.25 observed),
+    # and when the bias regime shifts, weeks of PI≈1.0 days flag — 65% of
+    # all unclassified days and 86% of curtailment labels were this artifact
+    # (2026-07 investigation). A day that beat the model's absolute
+    # expectation is never triage-worthy.
     flagged = pd.Series(False, index=daily.index)
     for _ in range(12):
         baseline = (
@@ -87,7 +98,9 @@ def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
             .median()
             .ffill()  # window ran dry (long outage): hold last good baseline
         )
-        new = daily["pi"] < site.flag_threshold * baseline
+        new = (daily["pi"] < site.flag_threshold * baseline) & (
+            daily["pi"] < PI_CEILING
+        )
         if new.equals(flagged):
             break
         flagged = new

@@ -20,8 +20,8 @@ GOLD_VERDICTS = ("confirmed", "refuted", "attributed")
 
 COLUMNS = [
     "site", "actual_kwh", "expected_kwh", "pi", "pi_baseline", "coverage",
-    "rain_mm", "flagged", "rule_label", "final_label", "verdict",
-    "provenance", "evidence",
+    "rain_mm", "snow_cm", "flagged", "rule_label", "final_label",
+    "final_label_2", "verdict", "provenance", "evidence",
 ]
 
 
@@ -35,13 +35,22 @@ def training_frame(
     dailies, classifier output, and referee-resolved final labels."""
     out = daily.copy()
     out.insert(0, "site", key)
-    if "rain_mm" not in out.columns:
-        out["rain_mm"] = float("nan")
+    for c in ("rain_mm", "snow_cm"):
+        if c not in out.columns:
+            out[c] = float("nan")
     # str() per value: StrEnum defeats astype(str) (see project gotchas)
     out["rule_label"] = HEALTHY
     out.loc[result.index, "rule_label"] = result["label"].map(str)
     out["final_label"] = HEALTHY
     out.loc[final.index, "final_label"] = final["label"].map(str)
+    # secondary label: referee-split days (e.g. weather + a divergent-inverter
+    # loss riding under it) carry the minor component here
+    out["final_label_2"] = ""
+    if "label_2" in final.columns:
+        has2 = final["label_2"].notna()
+        out.loc[final.index[has2], "final_label_2"] = (
+            final.loc[has2, "label_2"].map(str)
+        )
     out["verdict"] = ""
     if "verdict" in final.columns:
         out.loc[final.index, "verdict"] = final["verdict"]
