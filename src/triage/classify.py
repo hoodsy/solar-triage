@@ -14,6 +14,7 @@ class Fault(StrEnum):
     OUTAGE = "outage"
     CLIPPING = "clipping"
     SOILING = "soiling"
+    WEATHER = "weather"
     DATA_GAP = "data_gap"
     UNCLASSIFIED = "unclassified"
 
@@ -121,6 +122,35 @@ def detect_pi_step(
     return None
 
 
+def detect_weather(
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
+) -> str | None:
+    """Model-missed clouds, not hardware. Two paths: broken sky (sawtooth
+    ratio, well under the clear ceiling) and uniformly dark rain. csr guards
+    the label from bright-day faults; NaN csr (sensor site) disables the rule."""
+    csr = day_csr(intraday)
+    if not csr < CSR_WEATHER:  # NaN-safe: no clearsky column -> never weather
+        return None
+    rain = (
+        daily.at[day, "rain_mm"]
+        if "rain_mm" in daily.columns and pd.notna(daily.at[day, "rain_mm"])
+        else 0.0
+    )
+    chop = chop_mad(intraday, site)
+    if chop > CHOP_BROKEN_SKY:
+        tag = f"; {rain:.1f} mm rain" if rain >= RAIN_MM else ""
+        return (
+            f"changeable-sky day — output {csr:.0%} of clear-sky ceiling, "
+            f"hourly output/expected chopping ±{chop:.2f}{tag}"
+        )
+    if csr < CSR_DARK and rain >= RAIN_MM:
+        return (
+            f"dark rain day — output {csr:.0%} of clear-sky ceiling, "
+            f"{rain:.1f} mm rain"
+        )
+    return None
+
+
 def detect_clipping(
     day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
 ) -> str | None:
@@ -172,6 +202,7 @@ RULES = [
     (Fault.OUTAGE, detect_dead),
     (Fault.OUTAGE, detect_partial),
     (Fault.CLIPPING, detect_clipping),
+    (Fault.WEATHER, detect_weather),
     (Fault.OUTAGE, detect_pi_step),
     (Fault.SOILING, detect_soiling),
 ]

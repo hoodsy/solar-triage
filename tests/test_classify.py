@@ -3,7 +3,14 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
-from triage.classify import Fault, chop_mad, classify_day, day_csr, detect_soiling
+from triage.classify import (
+    Fault,
+    chop_mad,
+    classify_day,
+    day_csr,
+    detect_soiling,
+    detect_weather,
+)
 
 
 def make_daily(pi_values) -> pd.DataFrame:
@@ -79,3 +86,46 @@ def test_chop_low_on_smooth_derate():
     # uniform 60% output: a fault scales smoothly
     day = make_intraday([0.6] * 8, [1.0] * 8)
     assert chop_mad(day, CHOP_SITE) < 0.10
+
+
+def make_daily_with_rain(n, rain=0.0):
+    daily = make_daily([1.0] * n)
+    daily["rain_mm"] = rain
+    return daily
+
+
+WEATHER_SITE = SimpleNamespace(dc_capacity_kw=2.0)
+
+
+def test_weather_fires_on_broken_sky():
+    actual = [0.9, 0.4, 0.9, 0.4, 0.9, 0.4, 0.9, 0.4]
+    day = make_intraday(actual, [1.0] * 8, clearsky=[1.3] * 8)  # csr ~0.5
+    daily = make_daily_with_rain(1)
+    assert detect_weather(daily.index[0], day, daily, WEATHER_SITE) is not None
+
+
+def test_weather_rejects_smooth_derate():
+    day = make_intraday([0.6] * 8, [1.0] * 8, clearsky=[1.3] * 8)
+    daily = make_daily_with_rain(1)
+    assert detect_weather(daily.index[0], day, daily, WEATHER_SITE) is None
+
+
+def test_weather_rejects_bright_day():
+    # underperforming but the sun was there: fault story, not weather
+    actual = [0.9, 0.6, 0.9, 0.6, 0.9, 0.6, 0.9, 0.6]
+    day = make_intraday(actual, [1.0] * 8, clearsky=[0.85] * 8)  # csr ~0.88
+    daily = make_daily_with_rain(1)
+    assert detect_weather(daily.index[0], day, daily, WEATHER_SITE) is None
+
+
+def test_weather_dark_rain_path_needs_no_chop():
+    day = make_intraday([0.2] * 8, [0.9] * 8, clearsky=[1.4] * 8)  # csr ~0.14, smooth
+    daily = make_daily_with_rain(1, rain=4.2)
+    evidence = detect_weather(daily.index[0], day, daily, WEATHER_SITE)
+    assert evidence is not None and "rain" in evidence
+
+
+def test_weather_inert_without_clearsky():
+    day = make_intraday([0.4] * 8, [1.0] * 8)  # sensor site: no clearsky column
+    daily = make_daily_with_rain(1, rain=4.2)
+    assert detect_weather(daily.index[0], day, daily, WEATHER_SITE) is None
