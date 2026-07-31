@@ -25,6 +25,25 @@ CSR_WEATHER = 0.75  # below: meaningfully less sun than a clear day
 CSR_DARK = 0.30  # below: uniformly dark day (rain path)
 CHOP_BROKEN_SKY = 0.10  # hourly ratio sawtooth threshold
 RAIN_MM = 1.0  # daily precip to call a day rainy
+QUANT_TOL = 0.15  # units: how close a deficit must land to an integer step
+
+
+def unit_deficit(deficit_kw: float, site: SiteConfig) -> tuple[float, float]:
+    """Deficit in units of one inverter/string; distance to the nearest whole
+    unit. Real partial loss lands on an integer; fleet-uniform effects don't."""
+    unit = site.ac_capacity_kw / site.n_units
+    units = deficit_kw / unit
+    return units, abs(units - round(units))
+
+
+def quantized(deficit_kw: float, site: SiteConfig) -> str:
+    """Evidence suffix: how the deficit sits on the -k/N unit grid."""
+    if site.n_units <= 1:
+        return ""
+    units, _ = unit_deficit(deficit_kw, site)
+    return (
+        f" ≈ {round(units)} of {site.n_units} units out (deficit {units:.1f} units)"
+    )
 
 
 def day_csr(intraday: pd.DataFrame) -> float:
@@ -92,6 +111,7 @@ def detect_partial(
             f"bright-day output plateaued {plateau_run / 4:.1f}h at {peak:.0f} kW — "
             f"{peak / site.ac_capacity_kw:.0%} of the {site.ac_capacity_kw:.0f} kW "
             f"AC ceiling — partial capacity loss"
+            + quantized(site.ac_capacity_kw - peak, site)
         )
     # partial outage without a clean plateau (cloud-chopped mornings, short caps):
     # healthy panels keep the cool-morning surplus while midday capacity is missing
@@ -103,6 +123,7 @@ def detect_partial(
         return (
             f"morning output {morning:.0%} of expected but midday only "
             f"{midday_ratio:.0%} — capacity missing at high sun, panels healthy"
+            + quantized((1 - midday_ratio) * site.ac_capacity_kw, site)
         )
     return None
 

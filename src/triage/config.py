@@ -34,6 +34,7 @@ class SiteConfig:
     report_start: str | None = None
     report_end: str | None = None
     # tuning: generic defaults, overridable per site
+    n_units: int = 1  # inverters/strings: real partial loss quantizes to capacity/n_units
     interval: str = "15min"
     derate: float = 0.8  # loss stack (heat, inverter conversion, wiring, mismatch, aging)
     coverage_min: float = 0.8  # exclude days missing >20% of intervals
@@ -51,6 +52,7 @@ SITES: dict[str, SiteConfig] = {
         # overdrive their 662.4 kW summed nameplate (24 × TRIO-27.6), so
         # ceiling-relative rules use the empirical value
         ac_capacity_kw=705.0,
+        n_units=24,  # 24 x TRIO-27.6: deficits quantize to ~4.2% steps
         # Arbuckle CA: met trust ladder only (the thermal rule wants ambient
         # temp). tilt/azimuth stay None — geometry is unverified, so no
         # clearsky column and the weather rule stays inert on this site.

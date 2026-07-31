@@ -10,6 +10,7 @@ from triage.classify import (
     day_csr,
     detect_soiling,
     detect_weather,
+    unit_deficit,
 )
 
 
@@ -129,3 +130,15 @@ def test_weather_inert_without_clearsky():
     day = make_intraday([0.4] * 8, [1.0] * 8)  # sensor site: no clearsky column
     daily = make_daily_with_rain(1, rain=4.2)
     assert detect_weather(daily.index[0], day, daily, WEATHER_SITE) is None
+
+
+def test_unit_deficit_lands_on_step():
+    site = SimpleNamespace(ac_capacity_kw=705.0, n_units=24)
+    units, dist = unit_deficit(3 * 705.0 / 24, site)  # exactly 3 inverters
+    assert abs(units - 3.0) < 0.01 and dist < 0.01
+
+
+def test_unit_deficit_between_steps():
+    site = SimpleNamespace(ac_capacity_kw=705.0, n_units=24)
+    units, dist = unit_deficit(2.4 * 705.0 / 24, site)
+    assert dist > 0.15  # fleet-uniform sag: lands between steps
