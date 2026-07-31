@@ -91,3 +91,7 @@ class PvdaqAdapter:
                 temp["temp_c"] = (temp["temp_c"] - 32.0) * 5.0 / 9.0
             out = out.join(temp, how="outer")
         return out
+
+    def load_inverters(self, site: SiteConfig) -> pd.DataFrame:
+        # adapter-uniform entry point: __main__ never cares which format
+        return load_inverters(site)

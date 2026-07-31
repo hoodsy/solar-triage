@@ -2,7 +2,6 @@ import os
 
 import pandas as pd
 
-from triage.adapters.pvdaq import load_inverters
 from triage.build import add_flags, build_daily, build_dataset
 from triage.classify import classify, events
 from triage.export import export_training
@@ -25,7 +24,9 @@ def main():
     # sub-metered sites: the per-inverter referee grades claims and
     # attributes the classifier's honest unclassified days
     if site.electrical:
-        final = resolve(result, daily_divergence(load_inverters(site)), site, df)
+        final = resolve(
+            result, daily_divergence(site.source.load_inverters(site)), site, df
+        )
     else:
         final = result
 

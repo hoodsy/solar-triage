@@ -67,11 +67,14 @@ class Stream:
 
 
 from triage.adapters.pvdaq import PvdaqAdapter  # noqa: E402
+from triage.adapters.pvdaq_lake import LakeColumn, PvdaqLakeAdapter  # noqa: E402
 from triage.adapters.solarnetwork import SolarNetworkAdapter  # noqa: E402
 
 __all__ = [
     "Adapter",
+    "LakeColumn",
     "PvdaqAdapter",
+    "PvdaqLakeAdapter",
     "SolarNetworkAdapter",
     "SourceFile",
     "Stream",
