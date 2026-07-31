@@ -53,11 +53,14 @@ SITES: dict[str, SiteConfig] = {
         # ceiling-relative rules use the empirical value
         ac_capacity_kw=705.0,
         n_units=24,  # 24 x TRIO-27.6: deficits quantize to ~4.2% steps
-        # Arbuckle CA: met trust ladder only (the thermal rule wants ambient
-        # temp). tilt/azimuth stay None — geometry is unverified, so no
-        # clearsky column and the weather rule stays inert on this site.
-        lat=39.01,
-        lon=-122.06,
+        # geometry: PVDAQ metadata says tilt 25 / azimuth 180, but the
+        # clear-day POA fit lands at azimuth 193 with 3.2% residual (vs 6.0%
+        # at 180) — the design tilt built to MAGNETIC south (declination
+        # +13 E). Fitted as-built values win over paperwork.
+        lat=38.996306,
+        lon=-122.134111,
+        tilt=25.0,
+        azimuth=193.0,
         report_start="2024-01-01",
         report_end="2024-11-30",
         source=PvdaqAdapter(

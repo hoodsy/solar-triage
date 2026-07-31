@@ -53,7 +53,11 @@ def clean(
             ok = irradiance.clearsky_limits(poa, clearsky_poa_wm2, csi_max=POA_CSI_MAX)
             mask(
                 "poa_wm2",
-                ~ok & poa.notna() & (clearsky_poa_wm2 > 50),
+                # only judge the ceiling when the model is meaningfully bright:
+                # at low sun the clearsky model's horizon/turbidity error, not
+                # the sensor, produces csi > 1.5 (2107: 90% of hits were 7-9h
+                # and 15-19h before this floor)
+                ~ok & poa.notna() & (clearsky_poa_wm2 > 200),
                 "poa above clear ceiling",
             )
 
