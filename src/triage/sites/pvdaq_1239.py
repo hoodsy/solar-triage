@@ -20,6 +20,8 @@ SITE = SiteConfig(
     lon=-68.0178,
     tilt=10.0,
     azimuth=155.0,
+    # healthy-day binned fit of actual/expected vs POA (0.00@37 (cut-in), 0.71@150 rel)
+    low_light_k=95.0,
     source=PvdaqLakeAdapter(
         data_dir=Path("data/1239/lake"),
         meter=LakeColumn(3015, scale=1.0, breaks=(("2018-08-04", 0.0, 0.001),)),

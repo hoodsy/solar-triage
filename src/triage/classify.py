@@ -16,6 +16,8 @@ class Fault(StrEnum):
     SOILING = "soiling"
     WEATHER = "weather"
     SNOW = "snow"
+    SNOW_SHEDDING = "snow_shedding"
+    CLOUD_INTERMITTENT = "cloud_intermittent"
     THERMAL = "thermal"
     DATA_GAP = "data_gap"
     UNCLASSIFIED = "unclassified"
@@ -131,7 +133,9 @@ def detect_dead(
 # 1239/1433/1283: pi median 0.01, tmax median -0.5 °C, fresh trailing snow)
 SNOW_3D_CM = 1.0  # trailing 3-day snowfall that can bury a panel
 SNOW_7D_CM = 5.0  # or a heavier week: lingering cover outlasts the storm
+SNOW_30D_CM = 10.0  # standing pack: a heavy month lingers past the 7d window
 SNOW_TMAX_C = 5.0  # above this the cover melts off same-day
+SNOW_SHED_TMAX_C = 12.0  # partial cover survives milder days while shedding
 SNOW_PI = 0.6  # burial suppresses deeply — mild dips are not snow
 
 
@@ -160,6 +164,61 @@ def detect_snow(
     return (
         f"PI {pi:.2f} with {snow3:.1f} cm snow in 3 days ({snow7:.1f} cm in 7) "
         f"and {tmax_txt} — panel burial, not hardware"
+    )
+
+
+def detect_snow_shedding(
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
+) -> str | None:
+    """Partial snow cover melting or sliding off: suppressed but not buried.
+    Sits BELOW the structural rules — a bright-day plateau or dead run in a
+    snowy week is still hardware — and takes only what they left."""
+    if "snow_cm" not in daily.columns:
+        return None
+    snow7 = daily.loc[:day, "snow_cm"].tail(7).sum()
+    snow30 = daily.loc[:day, "snow_cm"].tail(30).sum()
+    if not (snow7 >= SNOW_3D_CM or snow30 >= SNOW_30D_CM):
+        return None
+    pi = daily.at[day, "pi"]
+    if not pi < 0.95:  # NaN-safe; hard burial (< SNOW_PI) went to snow above
+        return None
+    tmax = (
+        intraday["temp_c"].max() if "temp_c" in intraday.columns else float("nan")
+    )
+    if tmax >= SNOW_SHED_TMAX_C:
+        return None
+    tmax_txt = f"day max {tmax:.0f} °C" if pd.notna(tmax) else "no temp reading"
+    return (
+        f"PI {pi:.2f} with {snow7:.1f} cm snow in 7 days ({snow30:.1f} cm in 30) "
+        f"and {tmax_txt} — partial cover shedding off panels"
+    )
+
+
+CSR_BRIGHT = 0.90  # above this the sky story runs out entirely
+
+
+def detect_cloud_intermittent(
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
+) -> str | None:
+    """Bright but changeable: passing clouds the reanalysis mistimed, costing
+    a mild deficit. Model-tier sites only — with a POA sensor the clouds
+    cancel out of PI and ratio chop means hardware, exactly as in
+    detect_weather. Dimmer chop (csr < 0.75) is detect_weather's broken-sky
+    branch; this rule takes the bright remainder."""
+    if "poa_wm2" in intraday.columns:
+        return None
+    csr = day_csr(intraday)
+    if not (CSR_WEATHER <= csr < CSR_BRIGHT):  # NaN-safe
+        return None
+    if chop_mad(intraday, site) <= CHOP_BROKEN_SKY:
+        return None
+    pi = daily.at[day, "pi"]
+    if not pi >= 0.7:  # deep loss under sawtooth is a fault story, not sky
+        return None
+    return (
+        f"bright but changeable — output {csr:.0%} of clear-sky ceiling, "
+        f"hourly ratio chopping ±{chop_mad(intraday, site):.2f}, PI {pi:.2f} "
+        f"— cloud timing the model missed"
     )
 
 
@@ -357,6 +416,8 @@ RULES = [
     (Fault.OUTAGE, detect_partial),
     (Fault.CLIPPING, detect_clipping),
     (Fault.WEATHER, detect_weather),
+    (Fault.SNOW_SHEDDING, detect_snow_shedding),
+    (Fault.CLOUD_INTERMITTENT, detect_cloud_intermittent),
     (Fault.UNCLASSIFIED, detect_pi_step),
     (Fault.SOILING, detect_soiling),
 ]

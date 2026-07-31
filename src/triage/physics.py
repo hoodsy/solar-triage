@@ -16,8 +16,21 @@ if TYPE_CHECKING:
 
 def expected_kw(poa_wm2: pd.Series, site: SiteConfig) -> pd.Series:
     """Expected AC power: nameplate scaled by "suns" (POA / 1000 W/m^2),
-    derated for the loss stack (heat, inverter, wiring, mismatch, aging)."""
-    return site.dc_capacity_kw * (poa_wm2 / 1000.0) * site.derate
+    derated for the loss stack (heat, inverter, wiring, mismatch, aging).
+
+    Sites with low_light_k > 0 additionally derate low light through a
+    one-parameter saturation curve, eff = G(1000+k)/(1000(G+k)) — unity at
+    full sun, falling below ~3k W/m^2. A flat derate over-predicts deep
+    overcast (conversion efficiency, inverter cut-in, diffuse-light optics)
+    and was mislabeling dark healthy days as faults; the shape is fitted
+    per site on healthy-day binned medians because it is a property of the
+    inverter fleet, not of physics in general (2107 measures dead flat)."""
+    base = site.dc_capacity_kw * (poa_wm2 / 1000.0) * site.derate
+    k = getattr(site, "low_light_k", 0.0)
+    if k:
+        g = poa_wm2.clip(lower=0.0)
+        base = base * (g * (1000.0 + k)) / (1000.0 * (g + k))
+    return base
 
 
 def clearsky_poa(index: pd.DatetimeIndex, site: SiteConfig) -> pd.Series:

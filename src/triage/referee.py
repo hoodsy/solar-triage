@@ -108,7 +108,14 @@ def resolve(
             collapsed = fleet <= FLEET_HEALTHY
             if label == Fault.OUTAGE:
                 verdict = "confirmed" if n >= 1 or collapsed else "refuted"
-            elif label in (Fault.THERMAL, Fault.WEATHER, Fault.SNOW):
+            elif label in (
+                Fault.THERMAL,
+                Fault.WEATHER,
+                Fault.SNOW,
+                Fault.SNOW_SHEDDING,
+                Fault.CLOUD_INTERMITTENT,
+            ):  # fleet-uniform sky stories: refuted when a divergent
+                # inverter subset owns the day's shortfall
                 verdict = "refuted" if faulty else "confirmed"
             elif label == Fault.UNCLASSIFIED:
                 if faulty:

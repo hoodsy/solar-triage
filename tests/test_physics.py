@@ -20,3 +20,18 @@ def test_clearsky_poa_shape():
     assert (poa.fillna(0) >= 0).all()
     assert (poa.between_time("00:00", "03:00").fillna(0) < 1.0).all()  # dark night
     assert poa.idxmax().hour in range(10, 15)  # peak lands midday
+
+
+def test_low_light_saturation_derates_dim_not_bright():
+    import pandas as pd
+    from types import SimpleNamespace
+    from triage.physics import expected_kw
+
+    poa = pd.Series([50.0, 150.0, 1000.0])
+    flat = SimpleNamespace(dc_capacity_kw=100.0, derate=0.8, low_light_k=0.0)
+    curved = SimpleNamespace(dc_capacity_kw=100.0, derate=0.8, low_light_k=55.0)
+    base = expected_kw(poa, flat)
+    adj = expected_kw(poa, curved)
+    assert adj.iloc[2] == base.iloc[2]  # full sun untouched
+    assert adj.iloc[0] / base.iloc[0] < 0.55  # deep dim heavily derated
+    assert 0.7 < adj.iloc[1] / base.iloc[1] < 0.85

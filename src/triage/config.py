@@ -33,6 +33,10 @@ class SiteConfig:
     n_units: int = 1  # inverters/strings: real partial loss quantizes to capacity/n_units
     interval: str = "15min"
     derate: float = 0.8  # loss stack (heat, inverter conversion, wiring, mismatch, aging)
+    # low-light saturation constant (W/m^2), 0 = off: expected power gets an
+    # extra eff = G(1000+k)/(1000(G+k)) factor. Fit per site on healthy-day
+    # binned actual/expected vs POA — fleets differ (see physics.expected_kw)
+    low_light_k: float = 0.0
     coverage_min: float = 0.8  # exclude days missing >20% of intervals
     flag_threshold: float = 0.92  # flag 8%+ underperformance vs baseline
     # absolute-PI guard: at/above this a day never flags, whatever the

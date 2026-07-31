@@ -254,8 +254,8 @@ def test_precedence_derived_from_rules():
     from triage.classify import precedence
 
     assert precedence() == [
-        "data_gap", "snow", "outage", "thermal", "clipping",
-        "weather", "unclassified", "soiling",
+        "data_gap", "snow", "outage", "thermal", "clipping", "weather",
+        "snow_shedding", "cloud_intermittent", "unclassified", "soiling",
     ]
 
 
@@ -340,3 +340,42 @@ def test_deep_overcast_is_weather_without_rain():
     site = SimpleNamespace(dc_capacity_kw=8.0, ac_capacity_kw=7.0, interval="15min")
     ev = detect_weather(day, intraday, daily, site)
     assert ev is not None and "deep overcast" in ev
+
+
+def test_snow_shedding_partial_cover():
+    from triage.classify import detect_snow_shedding
+
+    site = SimpleNamespace(dc_capacity_kw=10.0, interval="15min")
+    day, daily = make_snow_daily({3: 12.0}, pi=0.8)  # old heavy pack, mild dip
+    ev = detect_snow_shedding(day, make_cold_intraday(day, temp=8.0), daily, site)
+    assert ev is not None and "shedding" in ev
+    # too warm: cover cannot persist
+    warm = make_cold_intraday(day, temp=15.0)
+    assert detect_snow_shedding(day, warm, daily, site) is None
+    # no snow trail at all
+    day, daily = make_snow_daily({}, pi=0.8)
+    assert detect_snow_shedding(day, make_cold_intraday(day, temp=8.0), daily, site) is None
+
+
+def test_cloud_intermittent_bright_chop():
+    from triage.classify import detect_cloud_intermittent
+
+    day = pd.Timestamp("2024-06-01", tz="US/Eastern")
+    idx = pd.date_range(day + pd.Timedelta("7h"), periods=40, freq="15min")
+    # sawtooth HOUR to hour (chop_mad resamples hourly; a faster flicker
+    # would smooth away): 4 intervals high, 4 low, ...
+    saw = ([0.9] * 4 + [0.5] * 4) * 5
+    intraday = pd.DataFrame(
+        {"ac_power_kw": [5.0 * s for s in saw], "expected_kw": 5.0,
+         "clearsky_kw": 4.3},  # day lands ~0.81 of clear ceiling
+        index=idx,
+    )
+    daily = pd.DataFrame(
+        {"pi": 0.88, "coverage": 1.0}, index=pd.DatetimeIndex([day])
+    )
+    site = SimpleNamespace(dc_capacity_kw=8.0, interval="15min")
+    ev = detect_cloud_intermittent(day, intraday, daily, site)
+    assert ev is not None and "changeable" in ev
+    # measured-POA site: chop means hardware, rule must stay silent
+    with_poa = intraday.assign(poa_wm2=700.0)
+    assert detect_cloud_intermittent(day, with_poa, daily, site) is None
