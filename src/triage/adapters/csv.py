@@ -18,6 +18,7 @@ class CsvAdapter:
     data_dir: Path
     meter: Stream  # becomes ac_power_kw
     irradiance: Stream | None = None  # becomes poa_wm2; None = clear-sky site
+    temperature: Stream | None = None  # becomes temp_c (converted if fahrenheit)
 
     def _load_stream(self, stream: Stream, site: SiteConfig, name: str) -> pd.DataFrame:
         frames = []
@@ -46,8 +47,14 @@ class CsvAdapter:
         return out
 
     def load(self, site: SiteConfig) -> pd.DataFrame:
-        meter = self._load_stream(self.meter, site, "ac_power_kw")
-        if self.irradiance is None:
-            return meter
-        poa = self._load_stream(self.irradiance, site, "poa_wm2")
-        return meter.join(poa, how="outer")
+        out = self._load_stream(self.meter, site, "ac_power_kw")
+        if self.irradiance is not None:
+            out = out.join(
+                self._load_stream(self.irradiance, site, "poa_wm2"), how="outer"
+            )
+        if self.temperature is not None:
+            temp = self._load_stream(self.temperature, site, "temp_c")
+            if self.temperature.fahrenheit:
+                temp["temp_c"] = (temp["temp_c"] - 32.0) * 5.0 / 9.0
+            out = out.join(temp, how="outer")
+        return out

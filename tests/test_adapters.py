@@ -191,3 +191,22 @@ def test_solarnetwork_fixed_window_cache(tmp_path, monkeypatch):
     df2 = adapter.load(site)  # served from disk
     assert list(df1.index) == list(df2.index)
     assert df1["ac_power_kw"].tolist() == df2["ac_power_kw"].tolist()
+
+
+def test_temperature_stream_converts_fahrenheit(tmp_path):
+    make_csv(tmp_path, "meter.csv", ["2024-06-01 12:00", "2024-06-01 12:15"], [1.0, 1.0])
+    make_csv(
+        tmp_path, "env.csv",
+        ["2024-06-01 12:00", "2024-06-01 12:15"], [95.0, 96.8],
+        col="ambient_temperature_o_1",
+    )
+    adapter = CsvAdapter(
+        data_dir=tmp_path,
+        meter=Stream(files=("meter.csv",), column="power"),
+        temperature=Stream(
+            files=("env.csv",), column="ambient_temperature_o_1", fahrenheit=True
+        ),
+    )
+    df = adapter.load(make_site())
+    assert abs(df["temp_c"].iloc[0] - 35.0) < 0.01  # 95 F
+    assert abs(df["temp_c"].iloc[1] - 36.0) < 0.01  # 96.8 F

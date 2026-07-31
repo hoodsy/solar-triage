@@ -44,6 +44,7 @@ class Stream:
     column: str  # source data column to extract
     keep: Literal["first", "last"] = "last"  # duplicate-timestamp winner
     resample: bool = False  # mean-resample to site.interval
+    fahrenheit: bool = False  # PVDAQ environment files record °F
 
 
 from triage.adapters.csv import CsvAdapter  # noqa: E402

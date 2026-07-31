@@ -51,6 +51,11 @@ SITES: dict[str, SiteConfig] = {
         # overdrive their 662.4 kW summed nameplate (24 × TRIO-27.6), so
         # ceiling-relative rules use the empirical value
         ac_capacity_kw=705.0,
+        # Arbuckle CA: met trust ladder only (the thermal rule wants ambient
+        # temp). tilt/azimuth stay None — geometry is unverified, so no
+        # clearsky column and the weather rule stays inert on this site.
+        lat=39.01,
+        lon=-122.06,
         report_start="2024-01-01",
         report_end="2024-11-30",
         source=CsvAdapter(
@@ -76,6 +81,14 @@ SITES: dict[str, SiteConfig] = {
                 column="poa_irradiance_o_149574",
                 keep="first",  # 5-min files beat the 15-min 2025 file on overlap
                 resample=True,
+            ),
+            temperature=Stream(
+                files=(
+                    "2107_environment_data.csv",
+                    "2107_environment_data_2024.csv",
+                ),
+                column="ambient_temperature_o_149575",
+                fahrenheit=True,  # 44.2 at midnight Jan 1 is not celsius
             ),
         ),
     ),
