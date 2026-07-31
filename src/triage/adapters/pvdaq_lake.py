@@ -34,11 +34,25 @@ if TYPE_CHECKING:
 SENTINELS = (-999.0, -9999.0)
 
 
+def _convert(series: pd.Series, col: LakeColumn) -> pd.Series:
+    """(raw + offset) * scale, piecewise over the column's unit eras."""
+    out = (series + col.offset) * col.scale
+    for start, offset, scale in col.breaks:
+        after = series.index >= pd.Timestamp(start, tz=series.index.tz)
+        out[after] = (series[after] + offset) * scale
+    return out
+
+
 @dataclass(frozen=True)
 class LakeColumn:
     metric: int  # the channel's metric_id (the __NNNN suffix in lake CSVs)
     offset: float = 0.0  # applied before scale: (raw + offset) * scale
     scale: float = 1.0  # W -> kW: 0.001; °F -> °C: offset=-32, scale=5/9
+    # logger swaps change a channel's units mid-history (the 2018-08-04
+    # fleet migration flipped hW->W and °F->°C on several systems): from
+    # each date, (offset, scale) are replaced. Onboarding must verify the
+    # break is CLEAN — an overlap of both units (1202's meter) is unusable.
+    breaks: tuple[tuple[str, float, float], ...] = ()  # (from_date, offset, scale)
 
 
 @dataclass(frozen=True)
@@ -51,6 +65,9 @@ class PvdaqLakeAdapter:
     irradiance: LakeColumn | None = None  # becomes poa_wm2; None = model tier
     temperature: LakeColumn | None = None  # becomes temp_c
     inverter_scale: float = 1.0  # site.electrical metrics' AC power -> kW
+    # unit eras shared by every inverter channel — logger migrations flip
+    # a whole logger's channels on the same date
+    inverter_breaks: tuple[tuple[str, float, float], ...] = ()
 
     def _read(self, metrics: list[int], site: SiteConfig) -> pd.DataFrame:
         """Selected channels pivoted wide, on the tz-aware site grid."""
@@ -80,12 +97,16 @@ class PvdaqLakeAdapter:
         df = self._read([c.metric for cols in spec.values() for c in cols], site)
         out = pd.DataFrame(index=df.index)
         for canonical, cols in spec.items():
-            parts = [(df[c.metric] + c.offset) * c.scale for c in cols]
+            parts = [_convert(df[c.metric], c) for c in cols]
             out[canonical] = sum(parts)  # NaN poisons the sum, by design
         return out
 
     def load_inverters(self, site: SiteConfig) -> pd.DataFrame:
         metrics = [int(m) for m in site.electrical]
         df = self._read(metrics, site)
-        df.columns = [f"inv_{i + 1:02d}" for i in range(len(metrics))]
-        return df * self.inverter_scale
+        col = LakeColumn(0, scale=self.inverter_scale, breaks=self.inverter_breaks)
+        out = pd.DataFrame(
+            {f"inv_{i + 1:02d}": _convert(df[m], col) for i, m in enumerate(metrics)},
+            index=df.index,
+        )
+        return out

@@ -1,9 +1,11 @@
 """PVDAQ system 1202, "Distributed Sun - 6 Executive Campus", Cherry
 Hill NJ. 51.8 kW DC roof, azimuth 230 (southwest — the power peak stamps
 ~1h after solar noon in BOTH seasons, consistent with fixed EST stamps
-like 1199). 6 sub-metered inverters on a sparser reporting grid than the
-meter. The "_kw"-named meter channel is actually W-scale (42,240 raw on
-a 51.8 kW plant); the ambient_temp_k channel has 3% coverage — skipped.
+like 1199). 6 sub-metered inverters. The metered channel 2802 is
+UNUSABLE: kW-scale until 2018 then W-scale, with BOTH units overlapping
+2018-08→2019-07 (two loggers on one channel) — so the meter is the
+NaN-poisoned sum of the six inverter channels, which are W-scale across
+the full span. The ambient_temp_k channel has 3% coverage — skipped.
 No irradiance — Open-Meteo tier."""
 
 from pathlib import Path
@@ -25,7 +27,10 @@ SITE = SiteConfig(
     electrical=("2810", "2815", "2820", "2825", "2830", "2835"),
     source=PvdaqLakeAdapter(
         data_dir=Path("data/1202/lake"),
-        meter=LakeColumn(2802, scale=0.001),  # ac_power_metered_kw: W despite the name
+        meter=tuple(
+            LakeColumn(m, scale=0.001)
+            for m in (2810, 2815, 2820, 2825, 2830, 2835)
+        ),
         inverter_scale=0.001,
     ),
     weather=OpenMeteoWeather(

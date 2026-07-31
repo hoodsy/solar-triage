@@ -115,3 +115,14 @@ def test_multi_meter_sum_nan_when_half_missing(lake_dir):
         "2021-06-01 01:15:00-04:00":"2021-06-01 01:45:00-04:00"
     ]
     assert gap.isna().all()
+
+
+def test_unit_break_eras_convert_piecewise(lake_dir):
+    # day 1 raw is "hectowatts", day 2 the logger swapped to W
+    adapter = PvdaqLakeAdapter(
+        data_dir=lake_dir,
+        meter=LakeColumn(M_AC, scale=0.1, breaks=(("2021-06-02", 0.0, 0.001),)),
+    )
+    out = adapter.load(SITE)["ac_power_kw"].dropna()
+    assert out.loc["2021-06-01 12:00:00-04:00"] == pytest.approx(500.0)  # 5000 hW
+    assert out.loc["2021-06-02 12:00:00-04:00"] == pytest.approx(5.0)  # 5000 W
