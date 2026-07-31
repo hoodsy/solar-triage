@@ -93,11 +93,12 @@ def daily_divergence(inv_kw: pd.DataFrame) -> pd.DataFrame:
 
 
 def cross_check(result: pd.DataFrame, ref: pd.DataFrame) -> pd.DataFrame:
-    """Grade classifier claims. outage wants divergence; thermal/weather/
-    data_gap are refuted only when divergent inverters explain most of the
-    day's shortfall (a standing dead inverter under a cloudy sky doesn't
-    invalidate the sky story); soiling/clipping/unclassified are fleet-
-    uniform or ambiguous — uncheckable."""
+    """Grade classifier claims. outage wants divergence; thermal/weather are
+    refuted only when divergent inverters explain most of the day's shortfall
+    (a standing dead inverter under a cloudy sky doesn't invalidate the sky
+    story); data_gap claims unjudgeability, not plant health, so it is never
+    graded; soiling/clipping/unclassified are fleet-uniform or ambiguous —
+    uncheckable."""
     rows = []
     for day, row in result.iterrows():
         key = day.normalize()
@@ -113,7 +114,7 @@ def cross_check(result: pd.DataFrame, ref: pd.DataFrame) -> pd.DataFrame:
                 # a TOTAL outage has zero divergence by definition — the fleet
                 # collapsing with the plant corroborates, it doesn't refute
                 verdict = "confirmed" if n >= 1 or collapsed else "refuted"
-            elif row["label"] in ("thermal", "weather", "data_gap"):
+            elif row["label"] in ("thermal", "weather"):
                 verdict = "refuted" if faulty else "confirmed"
             else:
                 verdict = "uncheckable"

@@ -290,8 +290,8 @@ def classify_day(
     coverage = daily.at[day, "coverage"]
     if coverage < site.coverage_min:
         return Fault.DATA_GAP, (
-            f"only {coverage:.0%} of intervals reported — "
-            f"comms loss, production unknown"
+            f"only {coverage:.0%} of intervals judgeable — "
+            f"meter or sensor gap, performance unknown"
         )
     for label, detect in RULES:
         if evidence := detect(day, intraday, daily, site):

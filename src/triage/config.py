@@ -125,9 +125,11 @@ SITES: dict[str, SiteConfig] = {
             ),
             irradiance=Stream(
                 files=("9069_irradiance_data.csv",),
-                # best coverage in the meter_2 era (0.99); two of the site's
-                # 13 POA sensors read negative and several die mid-record
-                column="reference_cell_04_poa_irradiance_(w/m2)_o_150239",
+                # chosen by stale-screening, not raw coverage: cell_01 is 3%
+                # stale / 0 negatives / 0.96 coverage, while higher-coverage
+                # cells freeze at garbage for up to 39% of their readings
+                # (cell_04 sticks at 1271 W/m2 for days at a time)
+                column="reference_cell_01_poa_irradiance_(w/m2)_o_150232",
                 resample=True,
             ),
             temperature=Stream(
