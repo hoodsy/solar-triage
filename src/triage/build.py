@@ -38,17 +38,23 @@ def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
     daily["pi"] = daily["pi"].where(
         daily["coverage"] >= site.coverage_min
     )  # exclude days missing >20% of intervals
-    # ignore flagged days in the pi_baseline
+    # ignore flagged days in the pi_baseline; iterate to a fixpoint — excluding
+    # flagged (low) days only ever raises the median, so this converges. Two
+    # passes are not enough for outages longer than ~half a window.
     flagged = pd.Series(False, index=daily.index)
-    for _ in range(2):
+    for _ in range(12):
         baseline = (
             daily["pi"]
             .where(~flagged)
             .shift(1)
             .rolling(site.window, min_periods=site.window // 2)
             .median()
+            .ffill()  # window ran dry (long outage): hold last good baseline
         )
-        flagged = daily["pi"] < site.flag_threshold * baseline
+        new = daily["pi"] < site.flag_threshold * baseline
+        if new.equals(flagged):
+            break
+        flagged = new
 
     daily["pi_baseline"] = baseline
     daily["flagged"] = flagged

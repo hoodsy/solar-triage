@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from triage.build import build_daily, build_dataset
+from triage.build import add_flags, build_daily, build_dataset
 
 
 class StubSource:
@@ -46,3 +46,36 @@ def test_build_dataset_falls_back_to_clearsky_without_poa():
     exp = build_dataset(site)["expected_kw"]
     assert (exp.fillna(0) >= 0).all()
     assert exp.between_time("11:00", "14:00").max() > 10  # real winter midday power
+
+
+def make_flag_daily(pi_values):
+    idx = pd.date_range("2025-01-01", periods=len(pi_values), freq="1D", tz="UTC")
+    return pd.DataFrame(
+        {"pi": list(pi_values), "coverage": 1.0,
+         "actual_kwh": 1.0, "expected_kwh": 1.0},
+        index=idx,
+    )
+
+
+FLAG_SITE = SimpleNamespace(coverage_min=0.8, flag_threshold=0.92, window=30)
+
+
+def test_long_outage_stays_flagged():
+    # 60 healthy days then 45 dead days: every dead day must flag
+    daily = add_flags(make_flag_daily([1.0] * 60 + [0.0] * 45), FLAG_SITE)
+    assert daily["flagged"].iloc[60:].all()
+
+
+def test_baseline_freezes_when_window_runs_dry():
+    daily = add_flags(make_flag_daily([1.0] * 60 + [0.0] * 45), FLAG_SITE)
+    # once every trailing day is flagged, baseline holds last good value
+    assert daily["pi_baseline"].iloc[-1] > 0.9
+    assert daily["pi_baseline"].iloc[60:].notna().all()
+
+
+def test_sparse_dips_unchanged_by_convergence():
+    # isolated dips converge to the same answer the two-pass loop found
+    pi = [1.0] * 40 + [0.7] + [1.0] * 20 + [0.65] + [1.0] * 20
+    daily = add_flags(make_flag_daily(pi), FLAG_SITE)
+    assert daily["flagged"].sum() == 2
+    assert daily["flagged"].iloc[40] and daily["flagged"].iloc[61]
