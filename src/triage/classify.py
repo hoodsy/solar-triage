@@ -18,6 +18,37 @@ class Fault(StrEnum):
     UNCLASSIFIED = "unclassified"
 
 
+# weather-tier thresholds, tuned 2026-07 on sn120 flagged days vs 2107 referee
+# fault days (chop_mad: broken cloud 0.18 median vs real-fault 0.055 median)
+CSR_WEATHER = 0.75  # below: meaningfully less sun than a clear day
+CSR_DARK = 0.30  # below: uniformly dark day (rain path)
+CHOP_BROKEN_SKY = 0.10  # hourly ratio sawtooth threshold
+RAIN_MM = 1.0  # daily precip to call a day rainy
+
+
+def day_csr(intraday: pd.DataFrame) -> float:
+    """Day's actual energy vs the cloudless ceiling; NaN without clearsky."""
+    if "clearsky_kw" not in intraday.columns:
+        return float("nan")
+    ceiling = intraday["clearsky_kw"].sum()
+    return intraday["ac_power_kw"].sum() / ceiling if ceiling > 0 else float("nan")
+
+
+def hourly_ratio(intraday: pd.DataFrame, site: SiteConfig) -> pd.Series:
+    """Hourly actual/expected over lit hours — the shape-mismatch series."""
+    lit = intraday[intraday["expected_kw"] > 0.20 * site.dc_capacity_kw]
+    hourly = lit.resample("1h").mean()
+    return (hourly["ac_power_kw"] / hourly["expected_kw"]).dropna()
+
+
+def chop_mad(intraday: pd.DataFrame, site: SiteConfig) -> float:
+    """Median absolute hour-to-hour delta of the ratio: sustained sawtooth =
+    broken cloud; a real derate scales smoothly. Median, not std — one frontal
+    regime change must not read as chop."""
+    deltas = hourly_ratio(intraday, site).diff().abs().dropna()
+    return float(deltas.median()) if len(deltas) else 0.0
+
+
 def longest_run(mask: pd.Series) -> int:
     """Length of the longest consecutive run of True."""
     blocks = (~mask).cumsum()  # each False starts a new block

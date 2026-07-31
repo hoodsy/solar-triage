@@ -14,6 +14,10 @@ def build_dataset(site: SiteConfig) -> pd.DataFrame:
     else:
         poa = clearsky_poa(df.index, site)  # 3. cloudless ceiling
     df["expected_kw"] = expected_kw(poa, site)
+    # the cloudless ceiling, kept alongside expected: weather rules compare
+    # "how much sun arrived" (csr) independently of what the model believed
+    if None not in (site.lat, site.lon, site.tilt, site.azimuth):
+        df["clearsky_kw"] = expected_kw(clearsky_poa(df.index, site), site)
     return df
 
 
