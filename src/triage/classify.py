@@ -105,7 +105,10 @@ def chop_mad(intraday: pd.DataFrame, site: SiteConfig) -> float:
 def longest_run(mask: pd.Series) -> int:
     """Length of the longest consecutive run of True."""
     blocks = (~mask).cumsum()  # each False starts a new block
-    return int(mask.groupby(blocks).sum().max() or 0)
+    top = mask.groupby(blocks).sum().max()
+    # an empty mask (day with no midday rows) gives NaN — and NaN is
+    # truthy, so `or 0` would pass it straight into int()
+    return int(top) if pd.notna(top) else 0
 
 
 def midday_plateau(intraday: pd.DataFrame) -> tuple[int, float, pd.DataFrame]:
