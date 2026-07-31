@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import httpx
 import pandas as pd
 
+from triage.adapters import cached_csv
+
 if TYPE_CHECKING:
     from triage.config import SiteConfig
 
@@ -48,18 +50,7 @@ class SolarNetworkAdapter:
                 self.cache_dir
                 / f"node{self.node_id}_{source_tag}_{self.start}_{self.end}.csv"
             )
-            if cache.exists():
-                out = pd.read_csv(
-                    cache, parse_dates=["measured_on"], index_col="measured_on"
-                )
-                out.index = out.index.tz_convert(site.tz)
-                return out
-
-        out = self._fetch(w_start, w_end, site)
-        if cache is not None:
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            out.tz_convert("UTC").to_csv(cache)  # store UTC: unambiguous on disk
-        return out
+        return cached_csv(cache, site.tz, lambda: self._fetch(w_start, w_end, site))
 
     def _fetch(
         self, w_start: pd.Timestamp, w_end: pd.Timestamp, site: SiteConfig

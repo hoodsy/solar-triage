@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 import httpx
 import pandas as pd
 
+from triage.adapters import cached_csv
+
 if TYPE_CHECKING:
     from triage.config import SiteConfig
 
@@ -27,122 +29,87 @@ class OpenMeteoWeather:
     end: str
     cache_dir: Path | None = None
 
+    def _cache_path(self, prefix: str, site: SiteConfig) -> Path | None:
+        if self.cache_dir is None:
+            return None
+        return (
+            self.cache_dir
+            / f"{prefix}_{site.lat}_{site.lon}_{self.start}_{self.end}.csv"
+        )
+
+    def _get(self, site: SiteConfig, hourly_vars: str, **params) -> dict:
+        resp = httpx.get(
+            OM_ARCHIVE_URL,
+            params={
+                "latitude": site.lat,
+                "longitude": site.lon,
+                "start_date": self.start,
+                "end_date": self.end,
+                "hourly": hourly_vars,
+                "timezone": "UTC",
+                **params,
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.json()["hourly"]
+
     def poa(self, site: SiteConfig) -> pd.Series:
         """Interval-ending POA series (W/m^2) on the site grid."""
-        cache = None
-        if self.cache_dir is not None:
-            cache = (
-                self.cache_dir
-                / f"openmeteo_{site.lat}_{site.lon}_{self.start}_{self.end}.csv"
-            )
-            if cache.exists():
-                hourly = pd.read_csv(
-                    cache, parse_dates=["measured_on"], index_col="measured_on"
-                )["poa_wm2"]
-                hourly.index = hourly.index.tz_convert(site.tz)
-                return self._upsample(hourly, site)
-
-        hourly = self._fetch(site)
-        if cache is not None:
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            hourly.tz_convert("UTC").to_frame().to_csv(cache)  # UTC on disk
+        hourly = cached_csv(
+            self._cache_path("openmeteo", site),
+            site.tz,
+            lambda: self._fetch(site).to_frame(),
+        )["poa_wm2"]
         return self._upsample(hourly, site)
 
     def met(self, site: SiteConfig) -> pd.DataFrame:
-        """Hourly met frame (temp_c, rain_mm) on the site clock; cached like poa.
-        temp_c is the on-the-hour reading, rain_mm the preceding-hour sum."""
-        cache = None
-        if self.cache_dir is not None:
-            cache = (
-                self.cache_dir
-                / f"openmeteo_met_{site.lat}_{site.lon}_{self.start}_{self.end}.csv"
-            )
-            if cache.exists():
-                met = pd.read_csv(
-                    cache, parse_dates=["measured_on"], index_col="measured_on"
-                )
-                met.index = met.index.tz_convert(site.tz)
-                return met
+        """Hourly met frame (temp_c, rain_mm) on the site clock; cached like
+        poa. temp_c is the on-the-hour reading, rain_mm the preceding-hour sum."""
+        return cached_csv(
+            self._cache_path("openmeteo_met", site),
+            site.tz,
+            lambda: self._fetch_met(site),
+        )
 
-        resp = httpx.get(
-            OM_ARCHIVE_URL,
-            params={
-                "latitude": site.lat,
-                "longitude": site.lon,
-                "start_date": self.start,
-                "end_date": self.end,
-                "hourly": "temperature_2m,precipitation",
-                "timezone": "UTC",
-            },
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()["hourly"]
-        index = (
-            pd.DatetimeIndex(pd.to_datetime(data["time"]), name="measured_on")
-            .tz_localize("UTC")
-            .tz_convert(site.tz)
-        )
-        met = pd.DataFrame(
-            {"temp_c": data["temperature_2m"], "rain_mm": data["precipitation"]},
-            index=index,
-            dtype=float,
-        )
-        if cache is not None:
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            met.tz_convert("UTC").to_csv(cache)  # UTC on disk
-        return met
-
-    @staticmethod
-    def _met_to_grid(met: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
-        """Hourly met -> site.interval. temp is a level (bfill); rain is a sum
-        (bfill / steps so daily totals survive resampling)."""
-        steps = int(pd.Timedelta("1h") / pd.Timedelta(site.interval))
-        if steps == 1:
-            return met
-        grid = pd.date_range(
-            met.index[0] - pd.Timedelta("1h") + pd.Timedelta(site.interval),
-            met.index[-1],
-            freq=site.interval,
-            name="measured_on",
-        )
-        out = met.reindex(grid).bfill(limit=steps - 1)
-        out["rain_mm"] = out["rain_mm"] / steps
-        return out
-
-    def _fetch(self, site: SiteConfig) -> pd.Series:
-        resp = httpx.get(
-            OM_ARCHIVE_URL,
-            params={
-                "latitude": site.lat,
-                "longitude": site.lon,
-                "start_date": self.start,
-                "end_date": self.end,
-                "hourly": "global_tilted_irradiance",
-                "tilt": site.tilt,
-                # convention translation: pvlib azimuth is 0=north, Open-Meteo
-                # is 0=south (verified empirically: the north-facing setting
-                # collects 2.1x the winter energy at Auckland's latitude)
-                "azimuth": site.azimuth - 180,
-                "timezone": "UTC",
-            },
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()["hourly"]
+    def _index(self, data: dict, site: SiteConfig) -> pd.DatetimeIndex:
         # radiation values are the preceding-hour mean: labels are already
         # interval-ending, matching the canonical contract — no shift needed
-        index = (
+        return (
             pd.DatetimeIndex(pd.to_datetime(data["time"]), name="measured_on")
             .tz_localize("UTC")
             .tz_convert(site.tz)
         )
+
+    def _fetch(self, site: SiteConfig) -> pd.Series:
+        data = self._get(
+            site,
+            "global_tilted_irradiance",
+            tilt=site.tilt,
+            # convention translation: pvlib azimuth is 0=north, Open-Meteo
+            # is 0=south (verified empirically: the north-facing setting
+            # collects 2.1x the winter energy at Auckland's latitude)
+            azimuth=site.azimuth - 180,
+        )
         return pd.Series(
-            data["global_tilted_irradiance"], index=index, name="poa_wm2", dtype=float
+            data["global_tilted_irradiance"],
+            index=self._index(data, site),
+            name="poa_wm2",
+            dtype=float,
+        )
+
+    def _fetch_met(self, site: SiteConfig) -> pd.DataFrame:
+        data = self._get(site, "temperature_2m,precipitation")
+        return pd.DataFrame(
+            {"temp_c": data["temperature_2m"], "rain_mm": data["precipitation"]},
+            index=self._index(data, site),
+            dtype=float,
         )
 
     @staticmethod
-    def _upsample(hourly: pd.Series, site: SiteConfig) -> pd.Series:
+    def _upsample(
+        hourly: pd.Series | pd.DataFrame, site: SiteConfig
+    ) -> pd.Series | pd.DataFrame:
         """Hour-mean -> site.interval by backfill: each sub-interval inherits
         its hour's mean, preserving energy sums exactly (interpolation would
         smooth the shape but distort daily totals)."""
@@ -161,3 +128,13 @@ class OpenMeteoWeather:
             name="measured_on",
         )
         return hourly.reindex(grid).bfill(limit=steps - 1)
+
+    @staticmethod
+    def _met_to_grid(met: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
+        """Hourly met -> site.interval. temp is a level (bfill); rain is a sum
+        (bfill / steps so daily totals survive resampling)."""
+        steps = int(pd.Timedelta("1h") / pd.Timedelta(site.interval))
+        out = OpenMeteoWeather._upsample(met, site)
+        if steps > 1:
+            out = out.assign(rain_mm=out["rain_mm"] / steps)
+        return out

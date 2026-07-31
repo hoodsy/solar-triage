@@ -7,20 +7,39 @@ ac_power_kw (kW) and, when the site has an irradiance stream, poa_wm2
 (W/m^2). expected_kw is a model, not a measurement — it is computed
 downstream in build, never here.
 
-This package index holds the generic pieces (the Adapter protocol and the
-declarative spec dataclasses); each concrete source lives in its own module
-(csv.py, solarnetwork.py) and is re-exported here.
+This package index holds the generic pieces (the Adapter protocol, the
+declarative spec dataclasses, the cached_csv fetch helper); each concrete
+source lives in its own module (pvdaq.py, solarnetwork.py) and is
+re-exported here.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Callable, Literal, Protocol
 
 import pandas as pd
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from triage.config import SiteConfig
+
+
+def cached_csv(
+    path: Path | None, tz: str, fetch: Callable[[], pd.DataFrame]
+) -> pd.DataFrame:
+    """Disk-cached remote fetch: UTC timestamps on disk, site-local in memory.
+    With no cache path, fetches every time."""
+    if path is not None and path.exists():
+        df = pd.read_csv(path, parse_dates=["measured_on"], index_col="measured_on")
+        df.index = df.index.tz_convert(tz)
+        return df
+    df = fetch()
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df.tz_convert("UTC").to_csv(path)
+    return df
 
 
 class Adapter(Protocol):
