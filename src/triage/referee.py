@@ -21,29 +21,42 @@ import pandas as pd
 DIVERGENCE_MARGIN = 0.10  # an inverter this far under the fleet median diverges
 FLEET_HEALTHY = 0.5  # only judge days the fleet itself produced meaningfully
 TRAIL_DAYS = 30  # per-inverter normalization window
-INV_COL = re.compile(r"(inv_\d+)_ac_power_inv_\d+")
+# both PVDAQ naming vintages: inv_01_ac_power_inv_149583 (2107) and
+# inverter_01_ac_power_(kw)_inv_150953 (9069)
+INV_COL = re.compile(r"(?:inverter|inv)_(\d+)_ac_power")
 
-# 2107 vintages, newest wins on overlap — mirrors the meter Stream in config
-ELECTRICAL_FILES = (
-    "2107_electrical_data.csv",
-    "2107_electrical_data_2024.csv",
-    "2107_electrical_data_2025.csv",
-)
+# per-site electrical streams; vintage order mirrors the meter Streams
+ELECTRICAL: dict[str, tuple[str, ...]] = {
+    "2107": (
+        "2107_electrical_data.csv",
+        "2107_electrical_data_2024.csv",
+        "2107_electrical_data_2025.csv",
+    ),
+    "9069": ("9069_electrical_ac.csv",),
+}
 
 
 def load_inverters(files: tuple[str, ...], data_dir: Path, site) -> pd.DataFrame:
     """Per-inverter AC power (kW) on the site grid, columns inv_01..inv_NN."""
     frames = []
     for name in files:
-        df = pd.read_csv(
-            data_dir / name, parse_dates=["measured_on"], index_col="measured_on"
+        header = pd.read_csv(data_dir / name, nrows=0).columns
+        keep = {
+            c: f"inv_{int(m.group(1)):02d}"
+            for c in header
+            if (m := INV_COL.match(c))
+        }
+        df = pd.read_csv(  # usecols: the 9069 file is 1.6 GB of mixed channels
+            data_dir / name,
+            usecols=["measured_on", *keep],
+            parse_dates=["measured_on"],
+            index_col="measured_on",
         )
         df.index = df.index.tz_localize(
             site.tz, ambiguous="NaT", nonexistent="shift_forward"
         )
         df = df[df.index.notna()]
-        keep = {c: m.group(1) for c in df.columns if (m := INV_COL.match(c))}
-        frames.append(df[list(keep)].rename(columns=keep))
+        frames.append(df.rename(columns=keep))
     out = pd.concat(frames)
     out = out[~out.index.duplicated(keep="last")].sort_index()
     return out.resample(site.interval, closed="right", label="right").mean()
@@ -105,8 +118,11 @@ def main() -> None:
     from triage.classify import classify
     from triage.config import SITES
 
-    site = SITES[os.environ.get("TRIAGE_SITE", "2107")]
-    inv = load_inverters(ELECTRICAL_FILES, site.source.data_dir, site)
+    key = os.environ.get("TRIAGE_SITE", "2107")
+    if key not in ELECTRICAL:
+        raise SystemExit(f"no electrical stream registered for site {key}")
+    site = SITES[key]
+    inv = load_inverters(ELECTRICAL[key], site.source.data_dir, site)
     ref = daily_divergence(inv)
     df, daily = build(site)
     verdicts = cross_check(classify(daily, df, site), ref)

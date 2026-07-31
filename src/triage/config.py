@@ -94,6 +94,49 @@ SITES: dict[str, SiteConfig] = {
             ),
         ),
     ),
+    # PVDAQ system 9069, "Simon Solar Farm", Social Circle GA — 2023 Solar
+    # Data Prize utility site: 38.7 MW DC, 40 x 825 kW inverters, fixed
+    # ground mount. Two revenue-meter eras (meter_1 2016-02 → 2019-04,
+    # meter_2 2020-03 → 2023-11) separated by a year-long metering gap;
+    # the study window is the meter_2 era.
+    "9069": SiteConfig(
+        name="PVDAQ 9069",
+        # naive local stamps, DST-aware: June output peaks at stamp 13:00,
+        # December at 12:00 — the 1h summer drift rules out fixed UTC-5
+        tz="US/Eastern",
+        dc_capacity_kw=38687.0,
+        # empirical: meter_2-era 15-min max 32,092 kW, just under the 33 MW
+        # summed inverter nameplate (40 x 825)
+        ac_capacity_kw=32100.0,
+        n_units=40,
+        # real geometry from PVDAQ metadata — weather rule live on this site
+        lat=33.6762,
+        lon=-83.676,
+        tilt=20.0,
+        azimuth=180.0,  # south-facing
+        report_start="2020-04-01",
+        report_end="2023-11-28",
+        source=PvdaqAdapter(
+            data_dir=Path("data/9069/data"),
+            meter=Stream(
+                files=("9069_meter_data.csv",),
+                column="meter_2_ac_power_(kw)_meter_151053",
+                resample=True,  # 5-min source -> 15-min grid
+            ),
+            irradiance=Stream(
+                files=("9069_irradiance_data.csv",),
+                # best coverage in the meter_2 era (0.99); two of the site's
+                # 13 POA sensors read negative and several die mid-record
+                column="reference_cell_04_poa_irradiance_(w/m2)_o_150239",
+                resample=True,
+            ),
+            temperature=Stream(
+                files=("9069_environment_data.csv",),
+                column="weather_station_01_ambient_temperature_(sensor_1)_(c)_o_150245",
+                resample=True,  # already celsius, unlike 2107
+            ),
+        ),
+    ),
     # SolarNetwork public node 120 (Auckland, NZ) — residential PV, live data
     # since 2014. No irradiance source, so expected power uses the clear-sky
     # model; flag thresholds untuned for this site. The fixed study window
