@@ -5,7 +5,8 @@ from triage.physics import clearsky_poa, expected_kw
 from triage.quality import clean
 
 
-def build_dataset(site: SiteConfig) -> pd.DataFrame:
+def build_dataset(site: SiteConfig) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Canonical interval frame + counts of quality-masked intervals."""
     df = site.source.load(site)
     cs_poa = (
         clearsky_poa(df.index, site)
@@ -15,8 +16,6 @@ def build_dataset(site: SiteConfig) -> pd.DataFrame:
     # quality gate before anything derives from the sensors: masked
     # intervals become missing data and land in the data_gap machinery
     df, masked = clean(df, site, cs_poa)
-    if masked:
-        print("quality: masked " + "; ".join(f"{v} {k}" for k, v in masked.items()))
     # trust ladder for the irradiance driving expected power:
     if "poa_wm2" in df.columns and df["poa_wm2"].notna().any():
         poa = df["poa_wm2"]  # 1. on-site sensor: weather cancels out of PI
@@ -35,7 +34,7 @@ def build_dataset(site: SiteConfig) -> pd.DataFrame:
         met = site.weather._met_to_grid(site.weather.met(site), site)
         cols = [c for c in met.columns if c not in df.columns]
         df = df.join(met[cols].reindex(df.index))
-    return df
+    return df, masked
 
 
 def build_daily(df: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
@@ -95,9 +94,3 @@ def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
     return daily
 
 
-def build(site: SiteConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """The frame pipeline: canonical interval frame + flagged daily frame."""
-    df = build_dataset(site)
-    daily = build_daily(df, site).loc[site.report_start : site.report_end]
-    daily = add_flags(daily, site)
-    return df, daily

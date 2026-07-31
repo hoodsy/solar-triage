@@ -44,7 +44,7 @@ def test_build_dataset_falls_back_to_clearsky_without_poa():
         ac_capacity_kw=48.0,
         derate=0.8,
     )
-    exp = build_dataset(site)["expected_kw"]
+    exp = build_dataset(site)[0]["expected_kw"]  # (df, masked) tuple
     assert (exp.fillna(0) >= 0).all()
     assert exp.between_time("11:00", "14:00").max() > 10  # real winter midday power
 

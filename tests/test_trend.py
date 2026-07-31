@@ -20,3 +20,16 @@ def test_yoy_declines_short_series():
     idx = pd.date_range("2024-01-01", periods=200, freq="1D", tz="UTC")
     out = degradation(pd.Series(1.0, index=idx))
     assert "needs 2 years" in out
+
+
+def test_daily_pi_excludes_low_coverage():
+    from types import SimpleNamespace
+
+    from triage.trend import daily_pi
+
+    idx = pd.date_range("2024-01-01", periods=4, freq="1D", tz="UTC")
+    daily = pd.DataFrame(
+        {"pi": [1.0, 0.9, 0.8, 0.7], "coverage": [1.0, 0.5, 1.0, 1.0]}, index=idx
+    )
+    pi = daily_pi(daily, SimpleNamespace(coverage_min=0.8))
+    assert len(pi) == 3 and 0.9 not in pi.values
