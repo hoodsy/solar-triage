@@ -23,7 +23,9 @@ class Fault(StrEnum):
 # weather-tier thresholds, tuned 2026-07 on sn120 flagged days vs 2107 referee
 # fault days (chop_mad: broken cloud 0.18 median vs real-fault 0.055 median)
 CSR_WEATHER = 0.75  # below: meaningfully less sun than a clear day
-CSR_DARK = 0.30  # below: uniformly dark day (rain path)
+CSR_RAINY = 0.65  # below + measurable rain: dim enough that rain explains it
+# (tuned up from 0.30 on referee sweep 2026-07: smooth rainy days at csr ~0.6
+# were falling through to pi-step and claiming false outages)
 CHOP_BROKEN_SKY = 0.10  # hourly ratio sawtooth threshold
 RAIN_MM = 1.0  # daily precip to call a day rainy
 QUANT_TOL = 0.15  # units: how close a deficit must land to an integer step
@@ -123,9 +125,13 @@ def detect_thermal(
     if bright.empty:
         return None
     deficit = (bright["expected_kw"] - bright["ac_power_kw"]).median()
-    units, dist = unit_deficit(deficit, site)
-    if site.n_units > 1 and dist <= QUANT_TOL:
-        return None  # parked on a unit step: that's capacity loss, not heat
+    units, _ = unit_deficit(deficit, site)
+    # quantization only discriminates below one unit: any deficit big enough
+    # to contain a whole dead inverter is ambiguous from the meter alone, so
+    # it defers to the outage branches (referee sweep 2026-07: mixed hot days
+    # with inv_14 dead measured 2.5-4.2 units and must stay outage)
+    if site.n_units > 1 and units >= 1 - QUANT_TOL:
+        return None
     return (
         f"midday sag tracking {tmax:.0f} °C afternoon (ratio↔temp r={corr:.2f}), "
         f"deficit {units:.1f}/{site.n_units} units — thermal derate, not capacity loss"
@@ -200,9 +206,9 @@ def detect_weather(
             f"changeable-sky day — output {csr:.0%} of clear-sky ceiling, "
             f"hourly output/expected chopping ±{chop:.2f}{tag}"
         )
-    if csr < CSR_DARK and rain >= RAIN_MM:
+    if csr < CSR_RAINY and rain >= RAIN_MM:
         return (
-            f"dark rain day — output {csr:.0%} of clear-sky ceiling, "
+            f"dim rain day — output {csr:.0%} of clear-sky ceiling, "
             f"{rain:.1f} mm rain"
         )
     return None
