@@ -19,7 +19,8 @@ years=$(aws s3 ls --no-sign-request \
 for y in $years; do
   if [ "$y" -ge "$first" ] && [ "$y" -le "$last" ]; then
     echo "$id: year $y"
-    aws s3 cp --no-sign-request --recursive --quiet \
+    # sync, not cp: fetches are long and restartable syncs make retries cheap
+    aws s3 sync --no-sign-request --quiet \
       "s3://oedi-data-lake/pvdaq/parquet/pvdata/system_id=${id}/year=${y}/" \
       "$dest/year=${y}/"
   fi
