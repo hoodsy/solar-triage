@@ -48,7 +48,16 @@ def main():
         print("degradation:", trend_degradation)
         print("soiling:", trend_soiling)
 
-    report(final, daily, df, site)
+    report(
+        final,
+        ev,
+        daily,
+        df,
+        site,
+        masked=masked,
+        degradation=trend_degradation,
+        soiling=trend_soiling,
+    )
     print("\nwrote reports/report.html")
 
 
