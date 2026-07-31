@@ -12,6 +12,7 @@ from pathlib import Path
 
 from triage.adapters import LakeColumn, PvdaqLakeAdapter
 from triage.config import SiteConfig
+from triage.weather import OpenMeteoWeather
 
 SITE = SiteConfig(
     name="PVDAQ 4903 NIST Roof",
@@ -27,5 +28,11 @@ SITE = SiteConfig(
         meter=LakeColumn(82728),  # already kW
         irradiance=LakeColumn(82699),
         temperature=LakeColumn(82702),  # already °C
+    ),
+    # met join for Maryland snow (rain/snow only; sensor temp wins)
+    weather=OpenMeteoWeather(
+        start="2014-08-01",
+        end="2018-03-15",
+        cache_dir=Path("data/4903"),
     ),
 )

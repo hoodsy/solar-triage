@@ -7,6 +7,14 @@ line in the dict below. The key is what TRIAGE_SITE selects at startup.
 from triage.config import SiteConfig
 from triage.sites import (
     pvdaq_34,
+    pvdaq_4902,
+    pvdaq_1420,
+    pvdaq_1419,
+    pvdaq_1418,
+    pvdaq_1325,
+    pvdaq_1318,
+    pvdaq_51,
+    pvdaq_50,
     pvdaq_35,
     pvdaq_1199,
     pvdaq_1200,
@@ -30,6 +38,14 @@ from triage.sites import (
 
 SITES: dict[str, SiteConfig] = {
     "2107": pvdaq_2107.SITE,
+    "4902": pvdaq_4902.SITE,
+    "1420": pvdaq_1420.SITE,
+    "1419": pvdaq_1419.SITE,
+    "1418": pvdaq_1418.SITE,
+    "1325": pvdaq_1325.SITE,
+    "1318": pvdaq_1318.SITE,
+    "51": pvdaq_51.SITE,
+    "50": pvdaq_50.SITE,
     "9069": pvdaq_9069.SITE,
     "sn120": sn120.SITE,
     "34": pvdaq_34.SITE,

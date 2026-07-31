@@ -68,6 +68,11 @@ class PvdaqLakeAdapter:
     # unit eras shared by every inverter channel — logger migrations flip
     # a whole logger's channels on the same date
     inverter_breaks: tuple[tuple[str, float, float], ...] = ()
+    # stamp clamp: drop rows outside [start, end]. Old DAS files can carry
+    # corrupt dates (system 50 stamps rows in 1822), and one such row makes
+    # the resampled grid span centuries
+    start: str | None = None
+    end: str | None = None
 
     def _read(self, metrics: list[int], site: SiteConfig) -> pd.DataFrame:
         """Selected channels pivoted wide, on the tz-aware site grid."""
@@ -83,6 +88,8 @@ class PvdaqLakeAdapter:
         ).sort_index()
         wide.index = _localize(wide.index, site.tz)
         wide = wide[wide.index.notna()]
+        if self.start is not None or self.end is not None:
+            wide = wide.loc[self.start : self.end]
         wide = wide.resample(site.interval, closed="right", label="right").mean()
         wide.index.name = "measured_on"
         return wide.reindex(columns=metrics)  # a fully-absent channel -> NaN
