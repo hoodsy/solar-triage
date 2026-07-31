@@ -62,7 +62,7 @@ def midday_plateau(intraday: pd.DataFrame) -> tuple[int, float, pd.DataFrame]:
     return longest_run(midday["ac_power_kw"] > 0.97 * peak), peak, midday
 
 
-def detect_outage(
+def detect_dead(
     day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
 ) -> str | None:
     actual, expected = intraday["ac_power_kw"], intraday["expected_kw"]
@@ -73,6 +73,12 @@ def detect_outage(
             f"actual <5% of expected for {run} consecutive intervals "
             f"(~{run / 4:.1f}h) with expected >20% of capacity"
         )
+    return None
+
+
+def detect_partial(
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
+) -> str | None:
     # partial outage, same-day: bright-day plateau at a degraded ceiling —
     # the surviving inverters maxing out well below the plant's AC capacity
     plateau_run, peak, midday = midday_plateau(intraday)
@@ -97,6 +103,12 @@ def detect_outage(
             f"morning output {morning:.0%} of expected but midday only "
             f"{midday_ratio:.0%} — capacity missing at high sun, panels healthy"
         )
+    return None
+
+
+def detect_pi_step(
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
+) -> str | None:
     recent = daily.loc[:day, "pi"].tail(3)
     if (
         len(recent) == 3
@@ -152,10 +164,15 @@ def detect_soiling(
 # the "/ 4" hours math) are tuned in 15-MINUTE units on 2107 referee data.
 # Re-tune before running a site with a different interval.
 
-# precedence order — first match wins
+# precedence order — first match wins. Structural signatures always beat
+# trailing-context ones: a dead day in the rain is still dead, but "3 low
+# days in a row" is also what a cloud spell looks like (weather slots in
+# ahead of detect_pi_step; thermal ahead of detect_partial).
 RULES = [
-    (Fault.OUTAGE, detect_outage),
+    (Fault.OUTAGE, detect_dead),
+    (Fault.OUTAGE, detect_partial),
     (Fault.CLIPPING, detect_clipping),
+    (Fault.OUTAGE, detect_pi_step),
     (Fault.SOILING, detect_soiling),
 ]
 
