@@ -11,6 +11,7 @@ from triage.classify import (
     detect_soiling,
     detect_thermal,
     detect_weather,
+    events,
     unit_deficit,
 )
 
@@ -183,3 +184,51 @@ def test_thermal_rejects_without_temp_column():
     day = make_intraday([0.7] * 8, [1.0] * 8, clearsky=[1.05] * 8)
     daily = make_daily([1.0])
     assert detect_thermal(daily.index[0], day, daily, THERMAL_SITE) is None
+
+
+def make_result(labels, start="2025-11-01"):
+    idx = pd.date_range(start, periods=len(labels), freq="1D", tz="UTC")
+    r = pd.DataFrame({"label": labels, "pi": 0.1, "evidence": "e"}, index=idx)
+    r.index.name = "date"
+    return r[r["label"].notna()]
+
+
+def make_events_daily(n, start="2025-11-01"):
+    idx = pd.date_range(start, periods=n, freq="1D", tz="UTC")
+    return pd.DataFrame(
+        {"actual_kwh": 1.0, "expected_kwh": 5.0, "coverage": 1.0}, index=idx
+    )
+
+
+EV_SITE = SimpleNamespace(coverage_min=0.8)
+
+
+def test_events_merges_consecutive_same_label():
+    r = make_result(["outage"] * 3)
+    ev = events(r, make_events_daily(3), EV_SITE)
+    assert len(ev) == 1
+    assert ev.iloc[0]["days"] == 3
+    assert abs(ev.iloc[0]["energy_deficit_kwh"] - 12.0) < 1e-9  # 3 * (5-1)
+
+
+def test_events_split_by_healthy_day():
+    r = make_result(["outage", None, "outage"])  # healthy middle day: no row
+    ev = events(r, make_events_daily(3), EV_SITE)
+    assert len(ev) == 2
+
+
+def test_events_bridge_data_gap():
+    r = make_result(["outage", "data_gap", "outage"])
+    daily = make_events_daily(3)
+    daily.iloc[1, daily.columns.get_loc("coverage")] = 0.4
+    ev = events(r, daily, EV_SITE)
+    assert len(ev) == 1
+    assert ev.iloc[0]["label"] == "outage" and ev.iloc[0]["days"] == 3
+    # gap day's half-seen actuals don't pollute the deficit
+    assert abs(ev.iloc[0]["energy_deficit_kwh"] - 8.0) < 1e-9  # 2 valid days
+
+
+def test_lone_data_gap_is_its_own_event():
+    r = make_result(["data_gap"])
+    ev = events(r, make_events_daily(1), EV_SITE)
+    assert len(ev) == 1 and ev.iloc[0]["label"] == "data_gap"

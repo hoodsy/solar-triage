@@ -282,6 +282,61 @@ def classify_day(
     return Fault.UNCLASSIFIED, "no rule matched"
 
 
+def events(result: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
+    """Merge calendar-consecutive same-label days into events. data_gap days
+    bridge same-label neighbors (a comms dropout must not split one outage in
+    two); a healthy day does split. Deficit sums valid-coverage days only."""
+    columns = ["label", "start", "end", "days", "median_pi",
+               "energy_deficit_kwh", "evidence"]
+    if result.empty:
+        return pd.DataFrame(columns=columns)
+    segs = []  # strictly-consecutive same-label runs
+    for date, row in result.sort_index().iterrows():
+        prev = segs[-1] if segs else None
+        if (
+            prev is not None
+            and row["label"] == prev["label"]
+            and (date - prev["end"]).days == 1
+        ):
+            prev["end"] = date
+        else:
+            segs.append(
+                {"label": row["label"], "start": date, "end": date,
+                 "evidence": row["evidence"]}
+            )
+    merged = []  # bridge label/gap/label triples
+    for seg in segs:
+        if (
+            len(merged) >= 2
+            and merged[-1]["label"] == Fault.DATA_GAP
+            and merged[-2]["label"] == seg["label"]
+            and (seg["start"] - merged[-1]["end"]).days == 1
+            and (merged[-1]["start"] - merged[-2]["end"]).days == 1
+        ):
+            merged.pop()
+            merged[-1]["end"] = seg["end"]
+        else:
+            merged.append(seg)
+    rows = []
+    for seg in merged:
+        span = daily.loc[seg["start"] : seg["end"]]
+        valid = span[span["coverage"] >= site.coverage_min]
+        rows.append(
+            {
+                "label": seg["label"],
+                "start": seg["start"].date(),
+                "end": seg["end"].date(),
+                "days": (seg["end"] - seg["start"]).days + 1,
+                "median_pi": result.loc[seg["start"] : seg["end"], "pi"].median(),
+                "energy_deficit_kwh": (
+                    valid["expected_kwh"] - valid["actual_kwh"]
+                ).sum(),
+                "evidence": seg["evidence"],
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
+
+
 def classify(daily: pd.DataFrame, df: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
     """
     For each flagged day, select it and the trailing daily context,
