@@ -14,6 +14,7 @@ from triage.sites import (
     pvdaq_1239,
     pvdaq_1276,
     pvdaq_1277,
+    pvdaq_1283,
     pvdaq_1367,
     pvdaq_1433,
     pvdaq_2107,
@@ -33,6 +34,7 @@ SITES: dict[str, SiteConfig] = {
     "1239": pvdaq_1239.SITE,
     "1276": pvdaq_1276.SITE,
     "1277": pvdaq_1277.SITE,
+    "1283": pvdaq_1283.SITE,
     "1367": pvdaq_1367.SITE,
     "1433": pvdaq_1433.SITE,
 }

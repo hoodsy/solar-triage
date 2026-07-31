@@ -5,7 +5,7 @@ against a rolling baseline, classify them with evidence-backed rules, grade
 and attribute the claims against per-inverter data where it exists, and
 measure the slow trends the daily rules are blind to.
 
-Sites onboarded:
+Sites onboarded (13):
 
 - `2107` — [PVDAQ](https://github.com/openEDI/documentation/blob/main/pvdaq.md)
   Solar Data Prize, "Farm Solar Array": 893 kW fixed ground mount, Arbuckle CA.
@@ -16,6 +16,12 @@ Sites onboarded:
 - `sn120` — SolarNetwork public node 120: ~2 kW residential, Auckland NZ.
   No irradiance sensor — expected power comes from Open-Meteo reanalysis;
   the study window spans a real 77-day outage.
+- Ten PVDAQ main-lake systems (`34`, `1199`, `1200`, `1202`, `1203`, `1239`,
+  `1276`, `1277`, `1367`, `1433`) across CO/MD/NJ/DE/NV/ME — desert, snow, and
+  mid-Atlantic climates; five referee-graded (per-inverter channels), five with
+  measured POA. Fetched from the lake's parquet mirror by `scripts/fetch_lake.sh`;
+  per-site channel forensics live in each site module's docstring and
+  docs/pvdaq-census.md.
 
 # Data
 
