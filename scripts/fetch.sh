@@ -26,3 +26,16 @@ for f in meter_data irradiance_data environment_data electrical_ac; do
   aws s3 cp --no-sign-request "$PRIZE/9069_OEDI/data/9069_${f}.csv" data/9069/data/
 done
 aws s3 cp --no-sign-request --recursive "$PRIZE/9069_OEDI/metadata/" data/9069/metadata/
+
+# --- 2105 (Maui Ocean Center, Maui HI) ---
+mkdir -p data/2105/data data/2105/metadata
+for f in 2105_meter_data.csv 2105_irradiance_data.csv \
+  2105_environment_1_data.csv 2105_environment_2_data.csv \
+  2105_inv01_data.csv 2105_inv02_data.csv 2105_inv03_data.csv \
+  2105_inv04_data.csv 2105_inv05_data.csv 2105_inv06_data.csv \
+  2105_inv07_data.csv 2105_inv08_data.csv 2105_inv09_data.csv \
+  2105_inv10_data.csv 2105_inv11_data.csv
+do
+  aws s3 cp --no-sign-request "$PRIZE/2105_OEDI/data/$f" data/2105/data/
+done
+aws s3 cp --no-sign-request --recursive "$PRIZE/2105_OEDI/metadata/" data/2105/metadata/
