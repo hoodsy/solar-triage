@@ -47,12 +47,12 @@ class Stream:
     fahrenheit: bool = False  # PVDAQ environment files record °F
 
 
-from triage.adapters.csv import CsvAdapter  # noqa: E402
+from triage.adapters.pvdaq import PvdaqAdapter  # noqa: E402
 from triage.adapters.solarnetwork import SolarNetworkAdapter  # noqa: E402
 
 __all__ = [
     "Adapter",
-    "CsvAdapter",
+    "PvdaqAdapter",
     "SolarNetworkAdapter",
     "SourceFile",
     "Stream",

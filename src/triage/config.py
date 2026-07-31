@@ -9,7 +9,7 @@ from pathlib import Path
 
 from triage.adapters import (
     Adapter,
-    CsvAdapter,
+    PvdaqAdapter,
     SolarNetworkAdapter,
     SourceFile,
     Stream,
@@ -60,7 +60,7 @@ SITES: dict[str, SiteConfig] = {
         lon=-122.06,
         report_start="2024-01-01",
         report_end="2024-11-30",
-        source=CsvAdapter(
+        source=PvdaqAdapter(
             data_dir=Path("data/2107/data"),
             meter=Stream(  # keep="last" default: newest vintage wins on overlap
                 files=(

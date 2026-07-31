@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class CsvAdapter:
+class PvdaqAdapter:
     data_dir: Path
     meter: Stream  # becomes ac_power_kw
     irradiance: Stream | None = None  # becomes poa_wm2; None = clear-sky site

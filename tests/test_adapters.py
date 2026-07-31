@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from triage.adapters import CsvAdapter, SolarNetworkAdapter, SourceFile, Stream
+from triage.adapters import PvdaqAdapter, SolarNetworkAdapter, SourceFile, Stream
 
 
 def make_site(tz="US/Pacific", interval="15min"):
@@ -18,7 +18,7 @@ def make_csv(dir, name, times, values, time_col="measured_on", col="power"):
 def test_canonical_contract(tmp_path):
     make_csv(tmp_path, "m.csv", ["2024-06-01 12:00", "2024-06-01 12:15"], [100.0, 200.0])
     make_csv(tmp_path, "i.csv", ["2024-06-01 12:00", "2024-06-01 12:15"], [800.0, 900.0], col="poa")
-    adapter = CsvAdapter(
+    adapter = PvdaqAdapter(
         data_dir=tmp_path,
         meter=Stream(files=("m.csv",), column="power"),  # plain str -> SourceFile
         irradiance=Stream(files=(SourceFile("i.csv"),), column="poa"),
@@ -33,7 +33,7 @@ def test_canonical_contract(tmp_path):
 def test_dedupe_keep_last(tmp_path):
     make_csv(tmp_path, "old.csv", ["2024-06-01 12:00"], [1.0])
     make_csv(tmp_path, "new.csv", ["2024-06-01 12:00"], [2.0])
-    adapter = CsvAdapter(
+    adapter = PvdaqAdapter(
         data_dir=tmp_path,
         meter=Stream(files=(SourceFile("old.csv"), SourceFile("new.csv")), column="power", keep="last"),
     )
@@ -44,7 +44,7 @@ def test_dedupe_keep_last(tmp_path):
 def test_dedupe_keep_first(tmp_path):
     make_csv(tmp_path, "fine.csv", ["2024-06-01 12:00"], [1.0])
     make_csv(tmp_path, "coarse.csv", ["2024-06-01 12:00"], [2.0])
-    adapter = CsvAdapter(
+    adapter = PvdaqAdapter(
         data_dir=tmp_path,
         meter=Stream(files=(SourceFile("fine.csv"), SourceFile("coarse.csv")), column="power", keep="first"),
     )
@@ -55,7 +55,7 @@ def test_dedupe_keep_first(tmp_path):
 def test_per_file_timezone(tmp_path):
     # 2024-06-01 19:00 UTC == 2024-06-01 12:00 US/Pacific (PDT, UTC-7)
     make_csv(tmp_path, "utc.csv", ["2024-06-01 19:00"], [5.0], time_col="utc_measured_on")
-    adapter = CsvAdapter(
+    adapter = PvdaqAdapter(
         data_dir=tmp_path,
         meter=Stream(
             files=(SourceFile("utc.csv", time_col="utc_measured_on", tz="UTC"),),
@@ -69,7 +69,7 @@ def test_per_file_timezone(tmp_path):
 def test_ambiguous_fallback_stamp_dropped(tmp_path):
     # 2024-11-03 01:15 happened twice on the local clock; recorded once -> dropped
     make_csv(tmp_path, "m.csv", ["2024-11-03 01:15", "2024-11-03 12:00"], [1.0, 2.0])
-    adapter = CsvAdapter(
+    adapter = PvdaqAdapter(
         data_dir=tmp_path, meter=Stream(files=(SourceFile("m.csv"),), column="power")
     )
     df = adapter.load(make_site())
@@ -84,7 +84,7 @@ def test_resample_right_closed(tmp_path):
         [1.0, 2.0, 3.0], col="poa",
     )
     make_csv(tmp_path, "m.csv", ["2024-06-01 12:15"], [100.0])
-    adapter = CsvAdapter(
+    adapter = PvdaqAdapter(
         data_dir=tmp_path,
         meter=Stream(files=(SourceFile("m.csv"),), column="power"),
         irradiance=Stream(files=(SourceFile("i.csv"),), column="poa", resample=True),
@@ -97,7 +97,7 @@ def test_resample_right_closed(tmp_path):
 
 def test_power_only_site(tmp_path):
     make_csv(tmp_path, "m.csv", ["2024-06-01 12:00"], [100.0])
-    adapter = CsvAdapter(
+    adapter = PvdaqAdapter(
         data_dir=tmp_path, meter=Stream(files=(SourceFile("m.csv"),), column="power")
     )
     df = adapter.load(make_site())
@@ -200,7 +200,7 @@ def test_temperature_stream_converts_fahrenheit(tmp_path):
         ["2024-06-01 12:00", "2024-06-01 12:15"], [95.0, 96.8],
         col="ambient_temperature_o_1",
     )
-    adapter = CsvAdapter(
+    adapter = PvdaqAdapter(
         data_dir=tmp_path,
         meter=Stream(files=("meter.csv",), column="power"),
         temperature=Stream(
