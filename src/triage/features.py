@@ -113,8 +113,9 @@ def day_features(
     bright = intraday[intraday["expected_kw"] > 0.5 * site.ac_capacity_kw]
     if len(bright) and site.n_units > 1:
         deficit = (bright["expected_kw"] - bright["ac_power_kw"]).median()
-        units, dist = unit_deficit(deficit, site)
-        f["unit_count"] = units
-        f["unit_dist"] = dist
+        if pd.notna(deficit):  # bright hours can be all-NaN on gap days
+            units, dist = unit_deficit(deficit, site)
+            f["unit_count"] = units
+            f["unit_dist"] = dist
 
     return f
