@@ -18,6 +18,12 @@ def build_dataset(site: SiteConfig) -> pd.DataFrame:
     # "how much sun arrived" (csr) independently of what the model believed
     if None not in (site.lat, site.lon, site.tilt, site.azimuth):
         df["clearsky_kw"] = expected_kw(clearsky_poa(df.index, site), site)
+    # met trust ladder: an on-site sensor column (temp_c) wins; Open-Meteo
+    # fills whatever the adapter didn't provide
+    if site.weather is not None:
+        met = site.weather._met_to_grid(site.weather.met(site), site)
+        cols = [c for c in met.columns if c not in df.columns]
+        df = df.join(met[cols].reindex(df.index))
     return df
 
 
@@ -29,6 +35,11 @@ def build_daily(df: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
             "actual_kwh": df["ac_power_kw"].resample("1D").sum(min_count=1) * hours,
             "expected_kwh": df["expected_kw"].resample("1D").sum(min_count=1) * hours,
             "coverage": df["ac_power_kw"].resample("1D").count() / per_day,
+            **(
+                {"rain_mm": df["rain_mm"].resample("1D").sum(min_count=1)}
+                if "rain_mm" in df.columns
+                else {}
+            ),
         }
     )
     daily["pi"] = daily["actual_kwh"] / daily["expected_kwh"].where(

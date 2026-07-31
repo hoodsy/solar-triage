@@ -48,6 +48,68 @@ class OpenMeteoWeather:
             hourly.tz_convert("UTC").to_frame().to_csv(cache)  # UTC on disk
         return self._upsample(hourly, site)
 
+    def met(self, site: SiteConfig) -> pd.DataFrame:
+        """Hourly met frame (temp_c, rain_mm) on the site clock; cached like poa.
+        temp_c is the on-the-hour reading, rain_mm the preceding-hour sum."""
+        cache = None
+        if self.cache_dir is not None:
+            cache = (
+                self.cache_dir
+                / f"openmeteo_met_{site.lat}_{site.lon}_{self.start}_{self.end}.csv"
+            )
+            if cache.exists():
+                met = pd.read_csv(
+                    cache, parse_dates=["measured_on"], index_col="measured_on"
+                )
+                met.index = met.index.tz_convert(site.tz)
+                return met
+
+        resp = httpx.get(
+            OM_ARCHIVE_URL,
+            params={
+                "latitude": site.lat,
+                "longitude": site.lon,
+                "start_date": self.start,
+                "end_date": self.end,
+                "hourly": "temperature_2m,precipitation",
+                "timezone": "UTC",
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()["hourly"]
+        index = (
+            pd.DatetimeIndex(pd.to_datetime(data["time"]), name="measured_on")
+            .tz_localize("UTC")
+            .tz_convert(site.tz)
+        )
+        met = pd.DataFrame(
+            {"temp_c": data["temperature_2m"], "rain_mm": data["precipitation"]},
+            index=index,
+            dtype=float,
+        )
+        if cache is not None:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            met.tz_convert("UTC").to_csv(cache)  # UTC on disk
+        return met
+
+    @staticmethod
+    def _met_to_grid(met: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
+        """Hourly met -> site.interval. temp is a level (bfill); rain is a sum
+        (bfill / steps so daily totals survive resampling)."""
+        steps = int(pd.Timedelta("1h") / pd.Timedelta(site.interval))
+        if steps == 1:
+            return met
+        grid = pd.date_range(
+            met.index[0] - pd.Timedelta("1h") + pd.Timedelta(site.interval),
+            met.index[-1],
+            freq=site.interval,
+            name="measured_on",
+        )
+        out = met.reindex(grid).bfill(limit=steps - 1)
+        out["rain_mm"] = out["rain_mm"] / steps
+        return out
+
     def _fetch(self, site: SiteConfig) -> pd.Series:
         resp = httpx.get(
             OM_ARCHIVE_URL,

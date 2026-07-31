@@ -91,3 +91,11 @@ def test_cache_roundtrip(tmp_path, monkeypatch):
     poa2 = weather.poa(site)  # served from disk
     assert list(poa1.index) == list(poa2.index)
     assert poa1.fillna(-1).tolist() == poa2.fillna(-1).tolist()
+
+
+def test_met_upsample_preserves_daily_rain_total():
+    hours = pd.date_range("2025-08-01", periods=24, freq="1h", tz="Pacific/Auckland")
+    met = pd.DataFrame({"temp_c": 15.0, "rain_mm": 0.5}, index=hours)
+    on_grid = OpenMeteoWeather._met_to_grid(met, make_site())
+    assert abs(on_grid["rain_mm"].sum() - met["rain_mm"].sum()) < 1e-9  # 12 mm
+    assert (on_grid["temp_c"] == 15.0).all()

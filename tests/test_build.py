@@ -87,3 +87,12 @@ def test_low_coverage_day_is_flagged():
     out = add_flags(daily, FLAG_SITE)
     assert out["flagged"].iloc[35]
     assert pd.isna(out["pi"].iloc[35])  # still excluded from baseline math
+
+
+def test_build_daily_sums_rain():
+    idx = pd.date_range("2025-08-01", periods=96, freq="15min", tz="UTC")
+    df = pd.DataFrame(
+        {"ac_power_kw": 1.0, "expected_kw": 1.0, "rain_mm": 0.1}, index=idx
+    )
+    daily = build_daily(df, SimpleNamespace(interval="15min"))
+    assert abs(daily["rain_mm"].iloc[0] - 9.6) < 1e-9
