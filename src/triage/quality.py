@@ -6,19 +6,22 @@ coverage -> data_gap machinery instead of masquerading as performance.
 
 Zeros are never masked as stale: a flatline at zero in daylight is outage
 evidence (the dead-run rule's whole signal), not sensor stickiness. The
-same logic exempts the AC ceiling: a flatline at >=90% of ac_capacity is
-clipping physics (2107: 70 of 81 "stale" intervals were midday values at
-695-707 kW), so staleness only applies between the floor and the ceiling.
+same logic exempts the AC ceiling: a flatline near ac_capacity is clipping
+physics (2107: 70 of 81 "stale" intervals were midday values at 695-707 kW).
+The exemption floor (CLIP_EXEMPT_FRAC, 0.9) deliberately sits below the
+classifier's at-the-ceiling test (CEILING_FRAC, 0.95) so ragged plateau
+edges are never eaten either.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from pvanalytics.quality import gaps, weather
+from pvanalytics.quality import gaps, irradiance, weather
 
 POA_MIN_WM2 = -10.0  # thermopile night offsets sit a few W/m2 below zero
 POA_CSI_MAX = 1.5  # broken-cloud enhancement is real to ~1.3x clear sky
+CLIP_EXEMPT_FRAC = 0.9  # above this share of ac_capacity, flatline = clipping
 
 
 def clean(
@@ -39,7 +42,7 @@ def clean(
         masked[check] = n
 
     ac = df["ac_power_kw"]
-    judgeable = (ac != 0) & (ac < 0.9 * site.ac_capacity_kw)
+    judgeable = (ac != 0) & (ac < CLIP_EXEMPT_FRAC * site.ac_capacity_kw)
     mask("ac_power_kw", gaps.stale_values_diff(ac.dropna()).reindex(df.index) & judgeable, "meter stale")
     mask("ac_power_kw", gaps.interpolation_diff(ac.dropna()).reindex(df.index) & judgeable, "meter interpolated")
 
@@ -48,8 +51,6 @@ def clean(
         mask("poa_wm2", poa < POA_MIN_WM2, "poa negative")
         mask("poa_wm2", gaps.stale_values_diff(poa.dropna()).reindex(df.index) & (poa > 0), "poa stale")
         if clearsky_poa_wm2 is not None:
-            from pvanalytics.quality import irradiance
-
             ok = irradiance.clearsky_limits(poa, clearsky_poa_wm2, csi_max=POA_CSI_MAX)
             mask(
                 "poa_wm2",

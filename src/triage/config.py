@@ -1,7 +1,7 @@
 """Site registry and per-site configuration. Declarations only, no logic.
 
 Everything downstream reads a SiteConfig. The active site is chosen once at
-startup via the TRIAGE_SITE env var (see main.py).
+startup via the TRIAGE_SITE env var (see __main__.py).
 """
 
 from dataclasses import dataclass
