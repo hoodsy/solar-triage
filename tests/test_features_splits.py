@@ -97,3 +97,25 @@ def test_leave_one_site_out_covers_everything():
     assert total_test == len(df)  # every row held out exactly once
     for site, m in folds.items():
         assert (df.loc[m, "site"] == site).all()
+
+
+def test_train_build_matrix_and_smoke_fit():
+    from triage.train import FEATURES, build_matrix, make_model
+
+    n = 400
+    rng = np.random.default_rng(3)
+    df = pd.DataFrame(rng.normal(size=(n, len(FEATURES))), columns=FEATURES)
+    df["final_label"] = np.where(df["csr"] > 0, "healthy", "outage")
+    df["provenance"] = np.where(rng.random(n) < 0.1, "referee", "rule")
+    X, y, w = build_matrix(df)
+    assert len(X) == len(y) == len(w) == n
+    # referee rows weigh GOLD_WEIGHT x their class's rule rows
+    for lbl in ("healthy", "outage"):
+        g = w[(df["final_label"] == lbl) & (df["provenance"] == "referee")]
+        r = w[(df["final_label"] == lbl) & (df["provenance"] == "rule")]
+        if len(g) and len(r):
+            assert g.iloc[0] / r.iloc[0] == pytest.approx(5.0)
+    model = make_model()
+    model.set_params(max_iter=20)
+    model.fit(X, y, sample_weight=w)
+    assert (model.predict(X) == y).mean() > 0.95  # separable by construction

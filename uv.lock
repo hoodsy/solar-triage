@@ -1513,12 +1513,14 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "joblib" },
     { name = "pandas" },
     { name = "plotly" },
     { name = "pvanalytics" },
     { name = "pvlib" },
     { name = "pyarrow" },
     { name = "rdtools" },
+    { name = "scikit-learn" },
 ]
 
 [package.dev-dependencies]
@@ -1529,12 +1531,14 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "joblib", specifier = ">=1.5.3" },
     { name = "pandas", specifier = ">=3.0.5" },
     { name = "plotly", specifier = ">=6.9.0" },
     { name = "pvanalytics", specifier = ">=0.2.2" },
     { name = "pvlib", specifier = ">=0.15.2" },
     { name = "pyarrow", specifier = ">=25.0.0" },
     { name = "rdtools", specifier = ">=3.2.1" },
+    { name = "scikit-learn", specifier = ">=1.9.0" },
 ]
 
 [package.metadata.requires-dev]
