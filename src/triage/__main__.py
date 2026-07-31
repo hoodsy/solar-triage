@@ -5,6 +5,7 @@ import pandas as pd
 from triage.adapters.pvdaq import load_inverters
 from triage.build import add_flags, build_daily, build_dataset
 from triage.classify import classify, events
+from triage.export import export_training
 from triage.sites import SITES
 from triage.referee import daily_divergence, resolve
 from triage.report import report
@@ -13,7 +14,8 @@ from triage.trend import daily_insolation, daily_pi, degradation, soiling
 
 def main():
     # one process = one site: chosen at deploy time, e.g. TRIAGE_SITE=sn120
-    site = SITES[os.environ.get("TRIAGE_SITE", "2107")]
+    key = os.environ.get("TRIAGE_SITE", "2107")
+    site = SITES[key]
 
     df, masked = build_dataset(site)
     daily_full = build_daily(df, site)
@@ -48,6 +50,7 @@ def main():
         print("degradation:", trend_degradation)
         print("soiling:", trend_soiling)
 
+    csv_path = export_training(daily, result, final, key)
     report(
         final,
         ev,
@@ -57,8 +60,9 @@ def main():
         masked=masked,
         degradation=trend_degradation,
         soiling=trend_soiling,
+        path=f"reports/{key}/report.html",
     )
-    print("\nwrote reports/report.html")
+    print(f"\nwrote reports/{key}/report.html and {csv_path}")
 
 
 if __name__ == "__main__":
