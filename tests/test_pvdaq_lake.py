@@ -6,43 +6,43 @@ import pytest
 
 from triage.adapters import LakeColumn, PvdaqLakeAdapter
 
+# metric ids as in the real lake: the __NNNN suffix of the wide-CSV columns
+M_AC, M_POA, M_TEMP, M_INV1, M_INV2 = 1, 2, 3, 4, 5
+
 
 @pytest.fixture
 def lake_dir(tmp_path):
-    """Two day-partitions of 1-min data, prize-lake column chaos included:
-    power in W, temp in °F, a -999 sentinel, and two inverter channels."""
+    """Two day-partitions of long-format 1-min rows, lake chaos included:
+    power in W, temp in °F, and two inverter channels."""
+    values = {M_AC: 5000.0, M_POA: 800.0, M_TEMP: 77.0, M_INV1: 2500.0, M_INV2: 2500.0}
     for day in ("2021-06-01", "2021-06-02"):
         idx = pd.date_range(f"{day} 00:00", periods=1440, freq="1min")
-        df = pd.DataFrame(
-            {
-                "measured_on": idx,
-                "ac_power__1": 5000.0,  # W
-                "poa_irradiance__2": 800.0,
-                "ambient_temp_f__3": 77.0,  # °F -> 25 °C
-                "inv1_ac_power__4": 2500.0,
-                "inv2_ac_power__5": 2500.0,
-            }
+        long = pd.concat(
+            pd.DataFrame(
+                {"measured_on": idx, "metric_id": m, "value": v}
+            )
+            for m, v in values.items()
         )
         d = pd.Timestamp(day)
         part = tmp_path / f"year={d.year}" / f"month={d.month}" / f"day={d.day}"
         part.mkdir(parents=True)
-        df.to_parquet(part / f"system_1__date_{day}.snappy.000.parquet")
+        long.to_parquet(part / f"system_1__date_{day}.snappy.000.parquet")
     return tmp_path
 
 
 SITE = SimpleNamespace(
     tz="US/Eastern",
     interval="15min",
-    electrical=("inv1_ac_power__4", "inv2_ac_power__5"),
+    electrical=(str(M_INV1), str(M_INV2)),
 )
 
 
 def make_adapter(lake_dir: Path) -> PvdaqLakeAdapter:
     return PvdaqLakeAdapter(
         data_dir=lake_dir,
-        meter=LakeColumn("ac_power__1", scale=0.001),
-        irradiance=LakeColumn("poa_irradiance__2"),
-        temperature=LakeColumn("ambient_temp_f__3", offset=-32.0, scale=5 / 9),
+        meter=LakeColumn(M_AC, scale=0.001),
+        irradiance=LakeColumn(M_POA),
+        temperature=LakeColumn(M_TEMP, offset=-32.0, scale=5 / 9),
         inverter_scale=0.001,
     )
 
@@ -63,15 +63,30 @@ def test_load_canonical_contract(lake_dir):
 
 
 def test_sentinels_masked_before_conversion(lake_dir):
-    # poison one raw file with a -999 run, reload
-    part = next(lake_dir.rglob("*.parquet"))
+    # poison an interior hour (minutes 60-119) of the meter channel with -999;
+    # a leading-edge gap would just shorten the span (pivot drops all-NaN rows)
+    part = next((lake_dir / "year=2021" / "month=6" / "day=1").glob("*.parquet"))
     df = pd.read_parquet(part)
-    df.loc[:59, "ac_power__1"] = -999.0
+    meter_rows = df.index[df["metric_id"] == M_AC][60:120]
+    df.loc[meter_rows, "value"] = -999.0
     df.to_parquet(part)
     out = make_adapter(lake_dir).load(SITE)
-    hour1 = out["ac_power_kw"].iloc[:4]
-    assert hour1.isna().all()  # masked, not scaled into a plausible -0.999 kW
+    gap = out["ac_power_kw"].loc[
+        "2021-06-01 01:15:00-04:00":"2021-06-01 01:45:00-04:00"
+    ]
+    assert gap.isna().all()  # masked, not scaled into a plausible -0.999 kW
     assert out["ac_power_kw"].dropna().iloc[0] == pytest.approx(5.0)
+
+
+def test_missing_channel_is_nan_not_error(lake_dir):
+    adapter = PvdaqLakeAdapter(
+        data_dir=lake_dir,
+        meter=LakeColumn(M_AC, scale=0.001),
+        irradiance=LakeColumn(999),  # never recorded by this system
+    )
+    df = adapter.load(SITE)
+    assert df["poa_wm2"].isna().all()
+    assert df["ac_power_kw"].notna().any()
 
 
 def test_load_inverters_fleet_order(lake_dir):
