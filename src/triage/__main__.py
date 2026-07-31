@@ -51,7 +51,7 @@ def main():
         print("degradation:", trend_degradation)
         print("soiling:", trend_soiling)
 
-    csv_path = export_training(daily, result, final, key)
+    csv_path = export_training(daily, result, final, key, df, site)
     report(
         final,
         ev,
