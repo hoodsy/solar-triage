@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from triage.classify import events
 from triage.plot import plot_day, plot_energy, plot_pi
 
 if TYPE_CHECKING:
@@ -62,9 +63,15 @@ def report(
         '<p class="desc">Daily PI (actual / expected) against its rolling baseline; '
         "red markers are flagged days, judged against the dotted threshold.</p>",
         card(plot_pi(daily, site).to_html(full_html=False, include_plotlyjs=False)),
+        "<h2>Events</h2>",
+        '<p class="desc">Consecutive same-label days merged; data-gap days bridge '
+        "an event rather than splitting it. Deficit is energy the site failed to "
+        "produce over the event.</p>",
+        card(events(result, daily, site).to_html(border=0, index=False)),
         "<h2>Flagged days</h2>",
         f'<p class="desc">{len(result)} flagged days, each given one label and its '
-        "evidence (precedence: outage &gt; clipping &gt; soiling &gt; unclassified).</p>",
+        "evidence (precedence: data_gap &gt; outage &gt; thermal &gt; clipping &gt; "
+        "weather &gt; soiling &gt; unclassified).</p>",
         card(table.to_html(border=0)),
     ]
     for day, row in result.iterrows():

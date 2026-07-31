@@ -2,7 +2,7 @@ import os
 import pandas as pd
 
 from triage.build import build
-from triage.classify import classify
+from triage.classify import classify, events
 from triage.config import SITES
 from triage.report import report
 
@@ -15,6 +15,9 @@ def main():
     result = classify(daily, df, site)
 
     with pd.option_context("display.max_colwidth", None):
+        ev = events(result, daily, site)
+        if not ev.empty:
+            print(ev.to_string(index=False), end="\n\n")
         print(result.to_string())
     report(result, daily, df, site)
     print("\nwrote reports/report.html")
