@@ -8,6 +8,9 @@ from triage.config import SiteConfig
 from triage.sites import (
     pvdaq_34,
     pvdaq_4902,
+    pvdaq_14597,
+    pvdaq_14645,
+    pvdaq_14601,
     pvdaq_1420,
     pvdaq_1419,
     pvdaq_1418,
@@ -39,6 +42,9 @@ from triage.sites import (
 SITES: dict[str, SiteConfig] = {
     "2107": pvdaq_2107.SITE,
     "4902": pvdaq_4902.SITE,
+    "14597": pvdaq_14597.SITE,
+    "14645": pvdaq_14645.SITE,
+    "14601": pvdaq_14601.SITE,
     "1420": pvdaq_1420.SITE,
     "1419": pvdaq_1419.SITE,
     "1418": pvdaq_1418.SITE,

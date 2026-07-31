@@ -73,6 +73,9 @@ class PvdaqLakeAdapter:
     # the resampled grid span centuries
     start: str | None = None
     end: str | None = None
+    # naive stamps that are NOT site-local: localize here, convert to
+    # site.tz (the PVDB cohort stamps in UTC)
+    stamp_tz: str | None = None
 
     def _read(self, metrics: list[int], site: SiteConfig) -> pd.DataFrame:
         """Selected channels pivoted wide, on the tz-aware site grid."""
@@ -86,7 +89,10 @@ class PvdaqLakeAdapter:
             index="measured_on", columns="metric_id", values="value",
             aggfunc="last",
         ).sort_index()
-        wide.index = _localize(wide.index, site.tz)
+        if self.stamp_tz is not None:
+            wide.index = _localize(wide.index, self.stamp_tz).tz_convert(site.tz)
+        else:
+            wide.index = _localize(wide.index, site.tz)
         wide = wide[wide.index.notna()]
         if self.start is not None or self.end is not None:
             wide = wide.loc[self.start : self.end]
