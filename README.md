@@ -5,7 +5,7 @@ against a rolling baseline, classify them with evidence-backed rules, grade
 and attribute the claims against per-inverter data where it exists, and
 measure the slow trends the daily rules are blind to.
 
-Sites onboarded (20):
+Sites onboarded (31):
 
 - `2107` — [PVDAQ](https://github.com/openEDI/documentation/blob/main/pvdaq.md)
   Solar Data Prize, "Farm Solar Array": 893 kW fixed ground mount, Arbuckle CA.
@@ -16,12 +16,12 @@ Sites onboarded (20):
 - `sn120` — SolarNetwork public node 120: ~2 kW residential, Auckland NZ.
   No irradiance sensor — expected power comes from Open-Meteo reanalysis;
   the study window spans a real 77-day outage.
-- Seventeen PVDAQ main-lake systems (`34`, `35`, `1199`, `1200`, `1202`,
-  `1203`, `1239`, `1276`, `1277`, `1278`, `1283`, `1367`, `1368`, `1403`,
-  `1423`, `1433`, `4903`) across CO/MD/NJ/DE/NV/ME/FL — desert, snow, coastal
-  humid, and mid-Atlantic climates; eight referee-graded (per-inverter
-  channels), eleven with measured POA, one deliberate clipping site
-  (1278, DC/AC 1.24). Fetched from the lake's parquet mirror by `scripts/fetch_lake.sh`;
+- Twenty-eight PVDAQ systems across CO/MD/NJ/DE/NV/ME/FL/CA — desert, snow,
+  coastal-humid, mid-Atlantic, and SoCal-commercial climates; thirteen
+  referee-graded (per-inverter channels), a deliberate clipping site (1278,
+  DC/AC 1.24), a CAISO curtailment trio (14601/14645/14597, ingested from
+  the CSV-only lake via scripts/convert_lake_csv.py), and the 29-year NREL
+  x-Si twins (50/51). Fetched from the lake's parquet mirror by `scripts/fetch_lake.sh`;
   per-site channel forensics live in each site module's docstring and
   docs/pvdaq-census.md.
 
