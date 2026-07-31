@@ -14,6 +14,10 @@ SITE = SiteConfig(
     # ceiling-relative rules use the empirical value
     ac_capacity_kw=705.0,
     n_units=24,  # 24 x TRIO-27.6: deficits quantize to ~4.2% steps
+    # measured POA + 24-unit granularity: a single dead inverter dips PI to
+    # only ~0.96, so the absolute guard needs headroom; the referee grades
+    # every marginal flag against the fleet anyway
+    pi_ceiling=0.98,
     # geometry: PVDAQ metadata says tilt 25 / azimuth 180, but the
     # clear-day POA fit lands at azimuth 193 with 3.2% residual (vs 6.0%
     # at 180) — the design tilt built to MAGNETIC south (declination

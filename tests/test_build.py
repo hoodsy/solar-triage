@@ -58,7 +58,9 @@ def make_flag_daily(pi_values):
     )
 
 
-FLAG_SITE = SimpleNamespace(coverage_min=0.8, flag_threshold=0.92, window=30)
+FLAG_SITE = SimpleNamespace(
+    coverage_min=0.8, flag_threshold=0.92, window=30, pi_ceiling=0.95
+)
 
 
 def test_long_outage_stays_flagged():
@@ -136,7 +138,9 @@ def test_absolute_pi_guard_blocks_inflated_baseline_flags():
         {"pi": pi, "coverage": 1.0, "actual_kwh": 100.0, "expected_kwh": 100.0},
         index=idx,
     )
-    site = SimpleNamespace(coverage_min=0.8, flag_threshold=0.92, window=30)
+    site = SimpleNamespace(
+        coverage_min=0.8, flag_threshold=0.92, window=30, pi_ceiling=0.95
+    )
     out = add_flags(daily, site)
     assert not out["flagged"].iloc[40:].any()  # PI 1.0 is never a fault
     # a genuinely bad day still flags

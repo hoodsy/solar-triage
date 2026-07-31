@@ -35,4 +35,10 @@ class SiteConfig:
     derate: float = 0.8  # loss stack (heat, inverter conversion, wiring, mismatch, aging)
     coverage_min: float = 0.8  # exclude days missing >20% of intervals
     flag_threshold: float = 0.92  # flag 8%+ underperformance vs baseline
+    # absolute-PI guard: at/above this a day never flags, whatever the
+    # baseline says (reanalysis bias inflates baselines to ~1.25 and flags
+    # weeks of PI≈1.0 days otherwise). Fine-grained sub-metered sites with
+    # trusted sensors raise it — a 1-of-24 inverter loss only dips PI to
+    # ~0.96, and the referee grades those marginal flags independently.
+    pi_ceiling: float = 0.95
     window: int = 30  # baseline rolling window, days

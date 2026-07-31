@@ -69,9 +69,6 @@ def build_daily(df: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
     return daily
 
 
-PI_CEILING = 0.95  # absolute-PI guard: a day at/above this is never a fault
-
-
 def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
     daily = daily.copy()
     daily["pi"] = daily["pi"].where(
@@ -81,13 +78,6 @@ def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
     # flagged (low) days only ever raises the median, so this converges. Two
     # passes are not enough for outages longer than ~half a window.
     #
-    # the PI_CEILING guard exists because baseline-relative alone is not
-    # enough on weather-model sites: reanalysis bias runs PI at 1.1-1.4 for
-    # months, the rolling median follows it up (medians of 1.25 observed),
-    # and when the bias regime shifts, weeks of PI≈1.0 days flag — 65% of
-    # all unclassified days and 86% of curtailment labels were this artifact
-    # (2026-07 investigation). A day that beat the model's absolute
-    # expectation is never triage-worthy.
     flagged = pd.Series(False, index=daily.index)
     for _ in range(12):
         baseline = (
@@ -98,12 +88,22 @@ def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
             .median()
             .ffill()  # window ran dry (long outage): hold last good baseline
         )
-        new = (daily["pi"] < site.flag_threshold * baseline) & (
-            daily["pi"] < PI_CEILING
-        )
+        new = daily["pi"] < site.flag_threshold * baseline
         if new.equals(flagged):
             break
         flagged = new
+
+    # absolute-PI guard, applied AFTER convergence and only to the output:
+    # baseline-relative alone is not enough on weather-model sites —
+    # reanalysis bias runs PI at 1.1-1.4 for months, the rolling median
+    # follows it up (medians of 1.25 observed), and when the bias regime
+    # shifts, weeks of PI≈1.0 days flag (65% of unclassified and 86% of
+    # curtailment labels were this artifact, 2026-07 investigation). A day
+    # that beat the model's absolute expectation is never triage-worthy.
+    # The filter must NOT sit inside the loop: blocked marginal days would
+    # feed the baseline, which then decays into a standing fault's level
+    # and unflags whole months (2107's inv_14 era vanished that way).
+    flagged = flagged & (daily["pi"] < site.pi_ceiling)
 
     # comms loss is reportable, not just excludable: flag low-coverage days
     # (their pi stays masked, so they never feed the baseline)

@@ -19,6 +19,8 @@ SITE = SiteConfig(
     # summed inverter nameplate (40 x 825)
     ac_capacity_kw=32100.0,
     n_units=40,
+    # measured POA + 40-unit granularity: same headroom rationale as 2107
+    pi_ceiling=0.98,
     # real geometry from PVDAQ metadata — weather rule live on this site
     lat=33.6762,
     lon=-83.676,
