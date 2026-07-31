@@ -15,6 +15,7 @@ class Fault(StrEnum):
     CLIPPING = "clipping"
     SOILING = "soiling"
     WEATHER = "weather"
+    THERMAL = "thermal"
     DATA_GAP = "data_gap"
     UNCLASSIFIED = "unclassified"
 
@@ -94,6 +95,41 @@ def detect_dead(
             f"(~{run / 4:.1f}h) with expected >20% of capacity"
         )
     return None
+
+
+TMAX_HOT_C = 32.0  # a thermal story needs a hot day
+TEMP_CORR = -0.6  # hourly ratio must track temperature down
+
+
+def detect_thermal(
+    day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
+) -> str | None:
+    """Fleet-wide midday sag that tracks the temperature curve. Yields to the
+    outage branches when the deficit lands on a -k/N step: thermal derate hits
+    every inverter together, so it lands between the steps."""
+    if "temp_c" not in intraday.columns or intraday["temp_c"].isna().all():
+        return None
+    tmax = intraday["temp_c"].max()
+    if tmax < TMAX_HOT_C:
+        return None
+    ratio = hourly_ratio(intraday, site)
+    if len(ratio) < 5:
+        return None
+    temp = intraday["temp_c"].resample("1h").mean().reindex(ratio.index)
+    corr = ratio.corr(temp)
+    if not corr < TEMP_CORR:  # NaN-safe
+        return None
+    bright = intraday[intraday["expected_kw"] > 0.5 * site.ac_capacity_kw]
+    if bright.empty:
+        return None
+    deficit = (bright["expected_kw"] - bright["ac_power_kw"]).median()
+    units, dist = unit_deficit(deficit, site)
+    if site.n_units > 1 and dist <= QUANT_TOL:
+        return None  # parked on a unit step: that's capacity loss, not heat
+    return (
+        f"midday sag tracking {tmax:.0f} °C afternoon (ratio↔temp r={corr:.2f}), "
+        f"deficit {units:.1f}/{site.n_units} units — thermal derate, not capacity loss"
+    )
 
 
 def detect_partial(
@@ -221,6 +257,7 @@ def detect_soiling(
 # ahead of detect_pi_step; thermal ahead of detect_partial).
 RULES = [
     (Fault.OUTAGE, detect_dead),
+    (Fault.THERMAL, detect_thermal),
     (Fault.OUTAGE, detect_partial),
     (Fault.CLIPPING, detect_clipping),
     (Fault.WEATHER, detect_weather),

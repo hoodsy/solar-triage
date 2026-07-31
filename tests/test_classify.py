@@ -9,6 +9,7 @@ from triage.classify import (
     classify_day,
     day_csr,
     detect_soiling,
+    detect_thermal,
     detect_weather,
     unit_deficit,
 )
@@ -142,3 +143,43 @@ def test_unit_deficit_between_steps():
     site = SimpleNamespace(ac_capacity_kw=705.0, n_units=24)
     units, dist = unit_deficit(2.4 * 705.0 / 24, site)
     assert dist > 0.15  # fleet-uniform sag: lands between steps
+
+
+THERMAL_SITE = SimpleNamespace(dc_capacity_kw=2.0, ac_capacity_kw=1.9, n_units=1)
+
+
+def hot_sag_day(temps=(22, 25, 28, 31, 34, 36, 37, 35), depth=0.25):
+    # ratio sags with the afternoon temp curve; temp peaks ~15:00
+    ratio = [1.0 - depth * (t - 22) / 15 for t in temps]
+    return make_intraday(
+        [r * 1.0 for r in ratio], [1.0] * len(temps),
+        clearsky=[1.05] * len(temps), temp=list(temps),
+    )
+
+
+def test_thermal_fires_on_hot_tracking_sag():
+    day = hot_sag_day()
+    daily = make_daily([1.0])
+    assert detect_thermal(daily.index[0], day, daily, THERMAL_SITE) is not None
+
+
+def test_thermal_rejects_cool_day():
+    day = hot_sag_day()
+    day["temp_c"] = day["temp_c"] - 15  # same shape, tmax ~22 C
+    daily = make_daily([1.0])
+    assert detect_thermal(daily.index[0], day, daily, THERMAL_SITE) is None
+
+
+def test_thermal_rejects_quantized_deficit():
+    # temps chosen so the bright-hours median deficit lands on exactly one
+    # unit of a 4-unit site (0.5 kW): capacity loss, not heat — must yield
+    site = SimpleNamespace(dc_capacity_kw=2.0, ac_capacity_kw=2.0, n_units=4)
+    day = hot_sag_day(temps=(22, 28, 34, 37, 37, 37, 37, 36), depth=0.5)
+    daily = make_daily([1.0])
+    assert detect_thermal(daily.index[0], day, daily, site) is None
+
+
+def test_thermal_rejects_without_temp_column():
+    day = make_intraday([0.7] * 8, [1.0] * 8, clearsky=[1.05] * 8)
+    daily = make_daily([1.0])
+    assert detect_thermal(daily.index[0], day, daily, THERMAL_SITE) is None
