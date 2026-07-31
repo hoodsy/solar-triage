@@ -248,3 +248,39 @@ def test_pi_step_labels_unclassified():
 
     label = next(lb for lb, fn in RULES if fn is detect_pi_step)
     assert label == Fault.UNCLASSIFIED
+
+
+def test_precedence_derived_from_rules():
+    from triage.classify import precedence
+
+    assert precedence() == [
+        "data_gap", "outage", "thermal", "clipping",
+        "weather", "unclassified", "soiling",
+    ]
+
+
+def test_detect_dead_thresholds_scale_with_interval():
+    from triage.classify import detect_dead
+
+    site15 = SimpleNamespace(dc_capacity_kw=2.0, interval="15min")
+    idx = pd.date_range("2025-01-15 10:00", periods=12, freq="15min", tz="UTC")
+    df = pd.DataFrame({"ac_power_kw": 1.0, "expected_kw": 1.0}, index=idx)
+    df.iloc[2:5, df.columns.get_loc("ac_power_kw")] = 0.0  # 3 intervals: under 1h
+    assert detect_dead(None, df, None, site15) is None
+    df.iloc[2:6, df.columns.get_loc("ac_power_kw")] = 0.0  # 4 intervals = 1h
+    assert detect_dead(None, df, None, site15) is not None
+    # hourly site: one dead interval is already an hour
+    site1h = SimpleNamespace(dc_capacity_kw=2.0, interval="1h")
+    idxh = pd.date_range("2025-01-15 10:00", periods=6, freq="1h", tz="UTC")
+    dfh = pd.DataFrame({"ac_power_kw": 1.0, "expected_kw": 1.0}, index=idxh)
+    dfh.iloc[2, dfh.columns.get_loc("ac_power_kw")] = 0.0
+    assert detect_dead(None, dfh, None, site1h) is not None
+
+
+def test_day_slice_empty_for_silent_day():
+    from triage.classify import day_slice
+
+    idx = pd.date_range("2025-01-15", periods=8, freq="1h", tz="UTC")
+    df = pd.DataFrame({"ac_power_kw": 1.0}, index=idx)
+    assert len(day_slice(df, pd.Timestamp("2025-01-15", tz="UTC"))) == 8
+    assert day_slice(df, pd.Timestamp("2025-02-01", tz="UTC")).empty

@@ -18,6 +18,23 @@ class Fault(StrEnum):
     THERMAL = "thermal"
     DATA_GAP = "data_gap"
     UNCLASSIFIED = "unclassified"
+    # referee-attribution vocabulary — the classifier never emits these two;
+    # they exist so resolve() on sub-metered sites shares the same enum
+    MIXED = "mixed"
+    CURTAILMENT = "curtailment"
+
+
+def per_hour(site: SiteConfig) -> float:
+    """Intervals per hour on this site's grid (4.0 at 15 min)."""
+    return pd.Timedelta("1h") / pd.Timedelta(site.interval)
+
+
+def day_slice(df: pd.DataFrame, day: pd.Timestamp) -> pd.DataFrame:
+    """One calendar day of intraday rows; empty frame for fully-silent days."""
+    try:
+        return df.loc[day.strftime("%Y-%m-%d")]
+    except KeyError:  # coverage-0 day: no rows at all
+        return df.iloc[0:0]
 
 
 # weather-tier thresholds, tuned 2026-07 on sn120 flagged days vs 2107 referee
@@ -29,6 +46,14 @@ CSR_RAINY = 0.65  # below + measurable rain: dim enough that rain explains it
 CHOP_BROKEN_SKY = 0.10  # hourly ratio sawtooth threshold
 RAIN_MM = 1.0  # daily precip to call a day rainy
 QUANT_TOL = 0.15  # units: how close a deficit must land to an integer step
+CEILING_FRAC = 0.95  # within this of ac_capacity = "at the AC ceiling"
+LIT_FRAC = 0.20  # expected above this share of dc_capacity = "lit hours"
+
+# run thresholds in HOURS (converted per site via per_hour). The values were
+# tuned on 15-minute 2107 referee data; re-tune before trusting a coarser grid.
+DEAD_RUN_H = 1.0  # dead-run rule: actual <5% of expected this long
+PARTIAL_PLATEAU_H = 1.75  # real degraded ceilings held >= 1.75h
+CLIP_PLATEAU_H = 2.0  # pinned at the true ceiling this long = clipping
 
 
 def unit_deficit(deficit_kw: float, site: SiteConfig) -> tuple[float, float]:
@@ -59,7 +84,7 @@ def day_csr(intraday: pd.DataFrame) -> float:
 
 def hourly_ratio(intraday: pd.DataFrame, site: SiteConfig) -> pd.Series:
     """Hourly actual/expected over lit hours — the shape-mismatch series."""
-    lit = intraday[intraday["expected_kw"] > 0.20 * site.dc_capacity_kw]
+    lit = intraday[intraday["expected_kw"] > LIT_FRAC * site.dc_capacity_kw]
     hourly = lit.resample("1h").mean()
     return (hourly["ac_power_kw"] / hourly["expected_kw"]).dropna()
 
@@ -89,12 +114,12 @@ def detect_dead(
     day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
 ) -> str | None:
     actual, expected = intraday["ac_power_kw"], intraday["expected_kw"]
-    dead = (actual < 0.05 * expected) & (expected > 0.20 * site.dc_capacity_kw)
+    dead = (actual < 0.05 * expected) & (expected > LIT_FRAC * site.dc_capacity_kw)
     run = longest_run(dead)
-    if run >= 4:
+    if run >= DEAD_RUN_H * per_hour(site):
         return (
             f"actual <5% of expected for {run} consecutive intervals "
-            f"(~{run / 4:.1f}h) with expected >20% of capacity"
+            f"(~{run / per_hour(site):.1f}h) with expected >20% of capacity"
         )
     return None
 
@@ -145,19 +170,19 @@ def detect_partial(
     # the surviving inverters maxing out well below the plant's AC capacity
     plateau_run, peak, midday = midday_plateau(intraday)
     if (
-        plateau_run >= 7  # tuned on 2024 referee data: real degraded ceilings held >=1.75h
-        and peak < 0.95 * site.ac_capacity_kw
-        and midday["expected_kw"].max() > 0.95 * site.ac_capacity_kw  # bright day
+        plateau_run >= PARTIAL_PLATEAU_H * per_hour(site)
+        and peak < CEILING_FRAC * site.ac_capacity_kw
+        and midday["expected_kw"].max() > CEILING_FRAC * site.ac_capacity_kw  # bright
     ):
         return (
-            f"bright-day output plateaued {plateau_run / 4:.1f}h at {peak:.0f} kW — "
+            f"bright-day output plateaued {plateau_run / per_hour(site):.1f}h at {peak:.0f} kW — "
             f"{peak / site.ac_capacity_kw:.0%} of the {site.ac_capacity_kw:.0f} kW "
             f"AC ceiling — partial capacity loss"
             + quantized(site.ac_capacity_kw - peak, site)
         )
     # partial outage without a clean plateau (cloud-chopped mornings, short caps):
     # healthy panels keep the cool-morning surplus while midday capacity is missing
-    lit = intraday[intraday["expected_kw"] > 0.20 * site.dc_capacity_kw]
+    lit = intraday[intraday["expected_kw"] > LIT_FRAC * site.dc_capacity_kw]
     ratio = lit["ac_power_kw"] / lit["expected_kw"]
     morning = ratio.between_time("07:00", "10:00").median()
     midday_ratio = ratio.between_time("11:00", "14:00").median()
@@ -225,12 +250,12 @@ def detect_clipping(
 ) -> str | None:
     plateau_run, peak, midday = midday_plateau(intraday)
     if (
-        plateau_run >= 8
-        and peak >= 0.95 * site.ac_capacity_kw  # pinned at the real ceiling
+        plateau_run >= CLIP_PLATEAU_H * per_hour(site)
+        and peak >= CEILING_FRAC * site.ac_capacity_kw  # pinned at the real ceiling
         and midday["expected_kw"].max() > 1.05 * peak
     ):
         return (
-            f"actual pinned {plateau_run / 4:.1f}h at {peak:.0f} kW — the "
+            f"actual pinned {plateau_run / per_hour(site):.1f}h at {peak:.0f} kW — the "
             f"{site.ac_capacity_kw:.0f} kW AC ceiling — while expected reached "
             f"{midday['expected_kw'].max():.0f} kW"
         )
@@ -259,10 +284,6 @@ def detect_soiling(
     return None
 
 
-# NOTE: interval-count thresholds in the detectors (run >= 4, plateau_run >= 7/8,
-# the "/ 4" hours math) are tuned in 15-MINUTE units on 2107 referee data.
-# Re-tune before running a site with a different interval.
-
 # precedence order — first match wins. Structural signatures always beat
 # trailing-context ones: a dead day in the rain is still dead, but "3 low
 # days in a row" is also what a cloud spell looks like (weather slots in
@@ -281,6 +302,12 @@ RULES = [
     (Fault.UNCLASSIFIED, detect_pi_step),
     (Fault.SOILING, detect_soiling),
 ]
+
+
+def precedence() -> list[str]:
+    """Rule precedence as label names, derived so report text can't go stale.
+    data_gap leads: it is the pre-rule gate in classify_day."""
+    return [str(Fault.DATA_GAP), *dict.fromkeys(str(label) for label, _ in RULES)]
 
 
 def classify_day(
@@ -361,11 +388,7 @@ def classify(daily: pd.DataFrame, df: pd.DataFrame, site: SiteConfig) -> pd.Data
     """
     rows = []
     for day in daily.index[daily["flagged"].fillna(False)]:
-        try:
-            intraday = df.loc[day.strftime("%Y-%m-%d")]
-        except KeyError:  # fully-silent day (coverage 0): no intraday rows
-            intraday = df.iloc[0:0]
-        label, evidence = classify_day(day, intraday, daily, site)
+        label, evidence = classify_day(day, day_slice(df, day), daily, site)
         rows.append(
             {
                 "date": day,
