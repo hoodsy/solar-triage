@@ -1,7 +1,9 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 
-from triage.classify import detect_soiling
+from triage.classify import Fault, classify_day, detect_soiling
 
 
 def make_daily(pi_values) -> pd.DataFrame:
@@ -28,3 +30,12 @@ def test_rejects_single_step():
 def test_rejects_double_step():
     daily = make_daily([1.0] * 6 + [0.93] * 5 + [0.86] * 5)  # two -7% steps
     assert detect_soiling(daily.index[-1], None, daily, None) is None
+
+
+def test_low_coverage_day_labeled_data_gap():
+    daily = make_daily([1.0] * 5)
+    daily["coverage"] = [1.0, 1.0, 0.5, 1.0, 1.0]
+    site = SimpleNamespace(coverage_min=0.8)
+    label, evidence = classify_day(daily.index[2], None, daily, site)
+    assert label == Fault.DATA_GAP
+    assert "50%" in evidence

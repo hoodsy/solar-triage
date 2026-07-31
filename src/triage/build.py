@@ -56,6 +56,10 @@ def add_flags(daily: pd.DataFrame, site: SiteConfig) -> pd.DataFrame:
             break
         flagged = new
 
+    # comms loss is reportable, not just excludable: flag low-coverage days
+    # (their pi stays masked, so they never feed the baseline)
+    flagged = flagged | (daily["coverage"] < site.coverage_min)
+
     daily["pi_baseline"] = baseline
     daily["flagged"] = flagged
     return daily

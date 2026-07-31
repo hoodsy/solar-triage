@@ -79,3 +79,11 @@ def test_sparse_dips_unchanged_by_convergence():
     daily = add_flags(make_flag_daily(pi), FLAG_SITE)
     assert daily["flagged"].sum() == 2
     assert daily["flagged"].iloc[40] and daily["flagged"].iloc[61]
+
+
+def test_low_coverage_day_is_flagged():
+    daily = make_flag_daily([1.0] * 40)
+    daily.iloc[35, daily.columns.get_loc("coverage")] = 0.5
+    out = add_flags(daily, FLAG_SITE)
+    assert out["flagged"].iloc[35]
+    assert pd.isna(out["pi"].iloc[35])  # still excluded from baseline math

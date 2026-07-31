@@ -14,6 +14,7 @@ class Fault(StrEnum):
     OUTAGE = "outage"
     CLIPPING = "clipping"
     SOILING = "soiling"
+    DATA_GAP = "data_gap"
     UNCLASSIFIED = "unclassified"
 
 
@@ -131,6 +132,13 @@ RULES = [
 def classify_day(
     day: pd.Timestamp, intraday: pd.DataFrame, daily: pd.DataFrame, site: SiteConfig
 ) -> tuple[Fault, str]:
+    # data quality precedes fault inference: no rule runs on a day we can't see
+    coverage = daily.at[day, "coverage"]
+    if coverage < site.coverage_min:
+        return Fault.DATA_GAP, (
+            f"only {coverage:.0%} of intervals reported — "
+            f"comms loss, production unknown"
+        )
     for label, detect in RULES:
         if evidence := detect(day, intraday, daily, site):
             return label, evidence
@@ -144,7 +152,10 @@ def classify(daily: pd.DataFrame, df: pd.DataFrame, site: SiteConfig) -> pd.Data
     """
     rows = []
     for day in daily.index[daily["flagged"].fillna(False)]:
-        intraday = df.loc[day.strftime("%Y-%m-%d")]
+        try:
+            intraday = df.loc[day.strftime("%Y-%m-%d")]
+        except KeyError:  # fully-silent day (coverage 0): no intraday rows
+            intraday = df.iloc[0:0]
         label, evidence = classify_day(day, intraday, daily, site)
         rows.append(
             {
