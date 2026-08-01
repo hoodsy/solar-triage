@@ -27,13 +27,14 @@ model/        trained model.joblib (gitignored)
 
 ## Work so far
 
-- **31 sites onboarded.** The two Solar Data Prize plants (2107 "Farm
+- **33 sites onboarded.** The two Solar Data Prize plants (2107 "Farm
   Solar Array", 893 kW; 9069 "Simon Solar Farm", 38.7 MW), a residential
   SolarNetwork node (sn120, no irradiance sensor, real 77-day outage),
-  and 28 PVDAQ systems across desert/snow/coastal/SoCal climates —
+  and 30 PVDAQ systems across desert/snow/coastal/SoCal climates —
   a deliberate clipping site (1278, DC/AC 1.24), a CAISO curtailment
-  trio (14597/14601/14645), and the 29-year NREL x-Si twins (50/51).
-  Onboarding is config-only: one module in `ingest/sites/`.
+  trio (14597/14601/14645), the 29-year NREL x-Si twins (50/51), and
+  the PVDB Santa Ana pair (14695/14697) first used as held-out
+  validation. Onboarding is config-only: one module in `ingest/sites/`.
 - **Rules + referee.** Quality gate -> daily-PI flagging -> rule labels;
   on sub-metered sites a fleet-relative referee grades each claim
   (confirmed/refuted/attributed) and resolves honest unclassified days.
@@ -47,6 +48,13 @@ model/        trained model.joblib (gitignored)
   (0.68). On the 1,449 days where the referee overruled the rules, the
   student (never trained on the site) sides with the referee 77% of the
   time and with the old rule label 0%.
+- **Held-out validation.** The PVDB pair (14695, referee x2; 14697,
+  meter-only) was onboarded after training and scored against the frozen
+  model: 98.4% day-level agreement over 1,710 labeled days, 88.5% on the
+  208 referee-graded days, zero false alarms across 1,383 healthy days.
+  The residual confusion is partial outage vs curtailment — separable
+  only with sub-metering, which is exactly what the referee uses. Both
+  sites were folded into training afterward.
 
 ## Running
 
