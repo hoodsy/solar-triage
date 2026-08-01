@@ -39,13 +39,13 @@ model/        trained model.joblib (gitignored)
   on sub-metered sites a fleet-relative referee grades each claim
   (confirmed/refuted/attributed) and resolves honest unclassified days.
   Referee-graded days are the gold label tier.
-- **Training set.** 89k site-days exported with feature vectors, rule
+- **Training set.** 91k site-days exported with feature vectors, rule
   label, final label, and provenance; identical schema across sites.
-  66k trainable (9 classes), 5.9k referee-graded gold.
+  68k trainable (9 classes), 6.1k referee-graded gold.
 - **Student model.** Gradient-boosted trees over the per-day features,
   sample-weighted by provenance (gold x5) and class balance.
   Leave-one-site-out macro-F1 0.92 — curtailment is the hard class
-  (0.68). On the 1,449 days where the referee overruled the rules, the
+  (0.69). On the 1,552 days where the referee overruled the rules, the
   student (never trained on the site) sides with the referee 77% of the
   time and with the old rule label 0%.
 - **Held-out validation.** The PVDB pair (14695, referee x2; 14697,
