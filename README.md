@@ -56,6 +56,43 @@ model/        trained model.joblib (gitignored)
   only with sub-metering, which is exactly what the referee uses. Both
   sites were folded into training afterward.
 
+## Edge plugin (SolarQuant)
+
+`src/triage/plugin/` implements Ecosuite's SolarQuant plugin spec
+(`ecosuite/solarquant-zoo` → `plugin-spec/schema.yaml`): a container a
+SolarNode pulls that ingests datums via `POST /measure`, buffers them in
+SQLite, closes each local day, computes the same per-day features the
+model trained on (Open-Meteo weather where available, clear-sky
+fallback), and returns prediction datums (`s.faultClass` + confidence /
+history / model-version meta). The trained student is the only decider
+on the device; on boot it backfills the trailing 30 days from
+SolarNetwork so day one already has a baseline.
+
+```
+# local
+SITE_TZ=Pacific/Auckland LAT=-36.85 LON=174.76 TILT=25 AZIMUTH=0 \
+DC_KW=2.0 AC_KW=1.9 NODE_ID=120 POWER_SOURCE_ID=Solar DB_PATH=/tmp/triage.db \
+uv run --extra plugin uvicorn triage.plugin.app:app
+
+# container
+docker build -t triage-plugin .
+docker run -p 8000:8000 -v triage-data:/data \
+  -e SITE_TZ=Pacific/Auckland -e LAT=-36.85 -e LON=174.76 -e TILT=25 \
+  -e AZIMUTH=0 -e DC_KW=2.0 -e AC_KW=1.9 -e NODE_ID=120 \
+  -e POWER_SOURCE_ID=Solar triage-plugin
+
+# replay the cached node-120 window against it and diff vs batch labels
+# (run the plugin with BACKFILL_DAYS=0 for a historical replay)
+uv run python scripts/replay_plugin.py
+
+# ship (manual, no CI)
+docker tag triage-plugin ghcr.io/<user>/triage-plugin:<version>
+docker push ghcr.io/<user>/triage-plugin:<version>
+```
+
+Prediction field names (`faultClass`, meta keys) are provisional pending
+Ecosuite and isolated in `plugin/constants.py`.
+
 ## Running
 
 ```
