@@ -16,3 +16,4 @@ CLAUDE.md
 reports/
 model/
 .pytest_cache
+hf/
