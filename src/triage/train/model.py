@@ -23,6 +23,7 @@ Run: uv run python -m triage.train
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
@@ -125,8 +126,18 @@ def main() -> None:
     print(imp.head(8).round(4).to_string())
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"model": final_model, "features": FEATURES}, MODEL_DIR / "model.joblib")
-    print(f"\nwrote {MODEL_DIR / 'model.joblib'}")
+    # self-describing bundle: serving code reads feature order, classes, and
+    # version from here — it must never import this module to learn them
+    trained_at = datetime.now(timezone.utc)
+    bundle = {
+        "model": final_model,
+        "features": FEATURES,
+        "classes": [str(c) for c in final_model.classes_],
+        "trained_at": trained_at.isoformat(timespec="seconds"),
+        "version": trained_at.strftime("%Y%m%dT%H%M%SZ"),
+    }
+    joblib.dump(bundle, MODEL_DIR / "model.joblib")
+    print(f"\nwrote {MODEL_DIR / 'model.joblib'} (version {bundle['version']})")
 
 
 if __name__ == "__main__":
