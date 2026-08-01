@@ -1,13 +1,13 @@
 # solar-triage
 
+[![Model on HF](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-yellow)](https://huggingface.co/hoodsy/sn-triage)
+[![Dataset on HF](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Dataset-yellow)](https://huggingface.co/datasets/hoodsy/sn-triage-dataset)
+[![Edge image](https://img.shields.io/badge/GHCR-triage--plugin-blue)](https://github.com/hoodsy/solar-triage/pkgs/container/triage-plugin)
+
 Daily fault triage for solar PV plants, trained on public data.
 Rules flag and label each plant-day, a per-inverter referee grades the
 rules where sub-metering exists, and a gradient-boosted student distills
 it all — built to work on plants it has never seen.
-
-[Model](https://huggingface.co/hoodsy/sn-triage) ·
-[Dataset](https://huggingface.co/datasets/hoodsy/sn-triage-dataset) ·
-[Edge image](https://github.com/hoodsy/solar-triage/pkgs/container/triage-plugin)
 
 Nine labels: `healthy` `outage` `weather` `snow` `snow_shedding`
 `cloud_intermittent` `clipping` `curtailment` `thermal`
