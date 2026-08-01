@@ -52,11 +52,14 @@ def close_pending(settings: Settings, bundle: Bundle, conn: sqlite3.Connection) 
 def _pending_dates(settings: Settings, conn: sqlite3.Connection) -> list[Date]:
     """Local dates ready to close: from the first buffered interval's LABEL
     date (a stamp at 23:45 belongs to the next day's 00:00 label) up to the
-    last one's — a day only closes once data at or beyond it proves the
-    stream has moved past, so interior gaps close as data_gap but the day a
-    silent node will eventually report stays open. Never past yesterday.
-    Bounding by the actual data span (not the calendar) is what lets the
-    Gate 3 replay stream a months-old window through unchanged."""
+    last label date EXCLUSIVE. Strictly-before matters: a day's own closing
+    interval carries the NEXT day's 00:00 label, so no label on D can prove
+    D complete — under production streaming (posts every few minutes) an
+    at-or-before rule closed every day at its first hour as data_gap.
+    Interior gaps still close as data_gap; the day a silent node will
+    eventually report stays open. Never past yesterday. Bounding by the
+    data span (not the calendar) lets the Gate 3 replay stream a
+    months-old window through unchanged."""
     lo, hi = conn.execute(
         "SELECT MIN(ts), MAX(ts) FROM intervals WHERE source_id = ?",
         (settings.power_source_id,),
@@ -68,7 +71,7 @@ def _pending_dates(settings: Settings, conn: sqlite3.Connection) -> list[Date]:
     today = pd.Timestamp.now(tz=tz).date()
     start = (pd.Timestamp(lo, unit="s", tz="UTC").tz_convert(tz) + step).date()
     last = (pd.Timestamp(hi, unit="s", tz="UTC").tz_convert(tz) + step).date()
-    end = min(last, today - timedelta(days=1))
+    end = min(last - timedelta(days=1), today - timedelta(days=1))
     have = {row[0] for row in conn.execute("SELECT date FROM days")}
     day, out = start, []
     while day <= end:
@@ -130,15 +133,26 @@ def _intraday(day: Date, settings: Settings, conn: sqlite3.Connection) -> pd.Dat
 
 def _baseline(conn: sqlite3.Connection) -> tuple[float, int]:
     """(trailing healthy-median pi, closed-day count) — the online stand-in
-    for the batch fixpoint baseline; skew measured in the Gate 3 replay."""
+    for the batch fixpoint baseline.
+
+    When the trailing window runs dry of healthy days (a long outage), HOLD
+    the last good baseline — the batch does the same via .ffill(), and the
+    first replay proved why it matters: a NaN baseline makes pi_rel NaN, a
+    (pi=0, pi_rel=NaN) row exists nowhere in training, the model answered
+    "healthy", and each mislabeled day then dragged the healthy-median to
+    zero. Only a true cold start (no baseline ever) returns NaN."""
     history = conn.execute(
         f"SELECT pi, label FROM days ORDER BY date DESC LIMIT {BASELINE_WINDOW}"
     ).fetchall()
     healthy = [pi for pi, label in history if label == "healthy" and pi is not None]
     n_closed = conn.execute("SELECT COUNT(*) FROM days").fetchone()[0]
-    if len(healthy) < BASELINE_MIN:
-        return float("nan"), n_closed
-    return float(pd.Series(healthy).median()), n_closed
+    if len(healthy) >= BASELINE_MIN:
+        return float(pd.Series(healthy).median()), n_closed
+    held = conn.execute(
+        "SELECT pi_baseline FROM days WHERE pi_baseline IS NOT NULL "
+        "ORDER BY date DESC LIMIT 1"
+    ).fetchone()
+    return (float(held[0]) if held else float("nan")), n_closed
 
 
 def _close_day(

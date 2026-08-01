@@ -51,6 +51,14 @@ def bell_kw(grid, site, scale=0.9):
     return expected_kw(cs, site) * scale
 
 
+def flush_stamp(site) -> int:
+    """The bucket-start stamp of TODAY's 00:00 label — yesterday's closing
+    interval. Posting it both completes yesterday's grid and proves the
+    stream has moved past it; today itself never closes."""
+    midnight = pd.Timestamp.now(tz=site.tz).normalize()
+    return int((midnight - pd.Timedelta(site.interval)).timestamp())
+
+
 def test_feature_parity_with_batch_path(tmp_path):
     settings = make_settings(tmp_path)
     site = settings.site
@@ -116,6 +124,12 @@ def test_stream_close_predict_and_baseline(make_client):
             assert body["rejected"] == 0
             seen.extend(body["predictions"])
 
+        # each day closed only once the next day's labels proved it complete
+        assert client.get("/health").json()["details"]["closed_days"] == 6
+        flush = {"nodeId": 120, "sourceId": "Solar",
+                 "timestamp": flush_stamp(site), "i": {"watts": 0.0}}
+        body = client.post("/measure", json={"datums": [flush]}).json()
+        seen.extend(body["predictions"])
         details = client.get("/health").json()["details"]
         assert details["closed_days"] == 7
 
@@ -127,6 +141,42 @@ def test_stream_close_predict_and_baseline(make_client):
         assert p["meta"]["model_version"] == bundle.version
     # a 0.9x-clear-sky bell with a healthy history is a healthy day
     assert [p["s"]["faultClass"] for p in seen[-2:]] == ["healthy", "healthy"]
+
+
+def test_long_outage_holds_baseline_and_stays_outage(tmp_path):
+    """The first replay's failure mode, pinned: healthy history, then dead
+    days beyond the baseline window. The held baseline must keep pi_rel ~ 0
+    and the label outage — never the healthy death-spiral."""
+    settings = make_settings(tmp_path)
+    site = settings.site
+    bundle = load_bundle(settings.model_path)
+    conn = store.connect(settings.db_path)
+    step = pd.Timedelta(site.interval)
+
+    start = yesterday() - timedelta(days=44)
+    for offset in range(45):  # 10 healthy days, then a 35-day outage
+        day = start + timedelta(days=offset)
+        grid = day_grid(day, site)
+        ac = bell_kw(grid, site).fillna(0.0)
+        if offset >= 10:  # telemetry alive, plant dead
+            ac = ac * 0.0
+        store.upsert_intervals(
+            conn,
+            [("Solar", int((ts - step).timestamp()), float(v) * 1000.0)
+             for ts, v in ac.items()],
+        )
+    store.upsert_intervals(conn, [("Solar", flush_stamp(site), 0.0)])
+    dayclose.close_pending(settings, bundle, conn)
+
+    rows = conn.execute(
+        "SELECT date, label, pi_baseline FROM days ORDER BY date"
+    ).fetchall()
+    assert len(rows) == 45
+    dead = rows[10:]
+    assert all(label == "outage" for _, label, _ in dead), [r[1] for r in dead]
+    # the baseline held at the healthy level through the whole outage
+    held = {baseline for _, _, baseline in dead}
+    assert all(b is not None and b > 0.5 for b in held), held
 
 
 def test_utc_local_boundary_and_data_gap(tmp_path):
@@ -141,6 +191,8 @@ def test_utc_local_boundary_and_data_gap(tmp_path):
     conn = store.connect(settings.db_path)
     store.upsert_intervals(conn, [("Solar", int(local.timestamp()), 500.0)])
     bundle = load_bundle(settings.model_path)
+    assert dayclose.close_pending(settings, bundle, conn) == 0  # nothing beyond it yet
+    store.upsert_intervals(conn, [("Solar", flush_stamp(settings.site), 0.0)])
     closed = dayclose.close_pending(settings, bundle, conn)
 
     assert closed == 1
@@ -169,11 +221,38 @@ def test_night_fill_gives_daytime_only_stream_full_coverage(tmp_path):
         [("Solar", int((ts - step).timestamp()), float(v) * 1000.0)
          for ts, v in ac[lit].items()],
     )
+    store.upsert_intervals(conn, [("Solar", flush_stamp(settings.site), 0.0)])
     bundle = load_bundle(settings.model_path)
     dayclose.close_pending(settings, bundle, conn)
     date, label, coverage = conn.execute(
         "SELECT date, label, coverage FROM days"
     ).fetchone()
     assert date == str(day)
+    assert coverage == pytest.approx(1.0)
+    assert label != "data_gap"
+
+
+def test_partial_day_never_closes_early(tmp_path):
+    """Production cadence: posts arrive every few minutes. A day with only
+    its morning buffered must stay open — the second replay closed every
+    day at its first hour before this rule was fixed."""
+    settings = make_settings(tmp_path)
+    site = settings.site
+    day = yesterday()
+    grid = day_grid(day, site)
+    ac = bell_kw(grid, site).fillna(0.0)
+    step = pd.Timedelta(site.interval)
+    rows = [("Solar", int((ts - step).timestamp()), float(v) * 1000.0)
+            for ts, v in ac.items()]
+
+    conn = store.connect(settings.db_path)
+    bundle = load_bundle(settings.model_path)
+    store.upsert_intervals(conn, rows[:32])  # morning only
+    assert dayclose.close_pending(settings, bundle, conn) == 0
+
+    store.upsert_intervals(conn, rows[32:])
+    store.upsert_intervals(conn, [("Solar", flush_stamp(site), 0.0)])
+    assert dayclose.close_pending(settings, bundle, conn) == 1
+    label, coverage = conn.execute("SELECT label, coverage FROM days").fetchone()
     assert coverage == pytest.approx(1.0)
     assert label != "data_gap"
