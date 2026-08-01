@@ -4,15 +4,14 @@ version = "0.1.0"
 description = "Solar PV fault triage: flag, classify, attribute, and report"
 readme = "README.md"
 requires-python = ">=3.11"
+# the edge plugin's footprint: everything the batch pipeline needs beyond
+# this lives in the `batch` group (installed by default locally, excluded
+# from the plugin image with --no-default-groups)
 dependencies = [
     "httpx>=0.28.1",
     "joblib>=1.5.3",
     "pandas>=3.0.5",
-    "plotly>=6.9.0",
-    "pvanalytics>=0.2.2",
     "pvlib>=0.15.2",
-    "pyarrow>=25.0.0",
-    "rdtools>=3.2.1",
     "scikit-learn>=1.9.0",
 ]
 
@@ -33,6 +32,15 @@ build-backend = "hatchling.build"
 dev = [
     "pytest>=9.1.1",
 ]
+batch = [
+    "plotly>=6.9.0",     # classify/plot + report
+    "pvanalytics>=0.2.2",  # ingest/quality gate
+    "pyarrow>=25.0.0",   # lake adapter parquet reads
+    "rdtools>=3.2.1",    # classify/trend
+]
+
+[tool.uv]
+default-groups = ["dev", "batch"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

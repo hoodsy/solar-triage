@@ -2,11 +2,14 @@ import pandas as pd
 
 from triage.config import SiteConfig
 from triage.ingest.physics import clearsky_poa, expected_kw
-from triage.ingest.quality import clean
 
 
 def build_dataset(site: SiteConfig) -> tuple[pd.DataFrame, dict[str, int]]:
     """Canonical interval frame + counts of quality-masked intervals."""
+    # lazy: pulls pvanalytics, which the edge plugin (build_daily only)
+    # deliberately ships without — same idiom as pvlib in physics
+    from triage.ingest.quality import clean
+
     df = site.source.load(site)
     cs_poa = (
         clearsky_poa(df.index, site)

@@ -5,10 +5,12 @@ FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock README.md ./
-# deps first, project second: a source edit re-runs only the cheap layer
-RUN uv sync --frozen --no-dev --extra plugin --no-install-project
+# deps first, project second: a source edit re-runs only the cheap layer.
+# --no-default-groups drops dev AND the batch-only stack (plotly,
+# pvanalytics, pyarrow, rdtools) — the plugin never imports them
+RUN uv sync --frozen --no-default-groups --extra plugin --no-install-project
 COPY src ./src
-RUN uv sync --frozen --no-dev --extra plugin
+RUN uv sync --frozen --no-default-groups --extra plugin
 COPY model/model.joblib ./model/model.joblib
 ENV PATH="/app/.venv/bin:$PATH" DB_PATH=/data/triage.db
 VOLUME /data
