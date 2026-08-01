@@ -2,13 +2,13 @@ import os
 
 import pandas as pd
 
-from triage.build import add_flags, build_daily, build_dataset
+from triage.ingest.build import add_flags, build_daily, build_dataset
 from triage.classify import classify, events
-from triage.export import export_training
-from triage.sites import SITES
-from triage.referee import daily_divergence, resolve
-from triage.report import report
-from triage.trend import daily_insolation, daily_pi, degradation, soiling
+from triage.train.export import export_training
+from triage.ingest.sites import SITES
+from triage.classify.referee import daily_divergence, resolve
+from triage.classify.report import report
+from triage.classify.trend import daily_insolation, daily_pi, degradation, soiling
 
 
 def main():

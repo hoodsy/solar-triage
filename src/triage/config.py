@@ -1,14 +1,14 @@
 """Per-site configuration dataclass. Declarations only, no logic.
 
 Everything downstream reads a SiteConfig. Site instances live one-per-file
-in triage/sites/, registered in triage.sites.SITES; the active site is
-chosen once at startup via the TRIAGE_SITE env var (see __main__.py).
+in triage/ingest/sites/, registered in triage.ingest.sites.SITES; the active
+site is chosen once at startup via the TRIAGE_SITE env var (see __main__.py).
 """
 
 from dataclasses import dataclass
 
-from triage.adapters import Adapter
-from triage.weather import OpenMeteoWeather
+from triage.ingest import Adapter
+from triage.ingest.weather import OpenMeteoWeather
 
 
 @dataclass(frozen=True)
