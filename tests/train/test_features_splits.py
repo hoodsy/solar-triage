@@ -119,3 +119,69 @@ def test_train_build_matrix_and_smoke_fit():
     model.set_params(max_iter=20)
     model.fit(X, y, sample_weight=w)
     assert (model.predict(X) == y).mean() > 0.95  # separable by construction
+
+
+@pytest.mark.parametrize("name", ["hgb", "rf", "logreg"])
+def test_candidate_factories_fit_with_nans_and_weights(name):
+    from triage.train.model import FEATURES, MODELS, fit
+
+    n = 400
+    rng = np.random.default_rng(3)
+    df = pd.DataFrame(rng.normal(size=(n, len(FEATURES))), columns=FEATURES)
+    # label derived BEFORE the NaN injection: rows keep their class even
+    # when csr itself goes missing, so the imputers have to earn their keep
+    df["final_label"] = np.where(df["csr"] > 0, "healthy", "outage")
+    df["provenance"] = np.where(rng.random(n) < 0.1, "referee", "rule")
+    vals = df[FEATURES].to_numpy().copy()  # to_numpy is read-only under CoW
+    vals[rng.random(vals.shape) < 0.1] = np.nan
+    df[FEATURES] = vals
+    # exercises the real weight routing: Pipeline last-step kwarg for
+    # rf/logreg, plain sample_weight for hgb
+    model = fit(df, MODELS[name])
+    assert (model.predict(df[FEATURES]) == df["final_label"]).mean() > 0.85
+
+
+def test_registry_matches_cli_choices():
+    from triage.train.model import MODELS
+
+    assert set(MODELS) == {"hgb", "rf", "logreg"}
+
+
+def test_cli_writes_candidate_and_bare_bundles(monkeypatch, tmp_path):
+    import json
+    import re
+
+    import joblib
+
+    from triage.train.model import FEATURES, main
+
+    rng = np.random.default_rng(5)
+    runs = (["healthy"] * 20 + ["outage"] * 5) * 2 + ["healthy"] * 10
+    frame = pd.concat(
+        [make_labeled(s, runs, "2024-01-01") for s in ("a", "b", "c")],
+        ignore_index=True,
+    )
+    frame[FEATURES] = rng.normal(size=(len(frame), len(FEATURES)))
+    frame["rule_label"] = frame["final_label"]
+    frame["provenance"] = np.where(rng.random(len(frame)) < 0.2, "referee", "rule")
+
+    monkeypatch.setattr("triage.train.model.load_training", lambda: frame.copy())
+    monkeypatch.chdir(tmp_path)  # MODEL_DIR is relative — writes land here
+
+    main(["--model", "logreg"])
+    out = tmp_path / "model" / "candidates" / "logreg"
+    bundle = joblib.load(out / "model.joblib")
+    metrics = json.loads((out / "metrics.json").read_text())
+    assert bundle["features"] == FEATURES
+    assert bundle["version"].startswith("logreg-")
+    assert metrics["version"] == bundle["version"]
+    assert set(metrics) == {"model", "version", "trained_at", "rows",
+                            "event_holdout", "loso", "gold_overruled"}
+    assert metrics["loso"]["macro_f1"] == (
+        metrics["loso"]["report"]["macro avg"]["f1-score"]
+    )
+
+    main([])  # bare: shipped path, no name prefix, no metrics file
+    bare = joblib.load(tmp_path / "model" / "model.joblib")
+    assert re.fullmatch(r"\d{8}T\d{6}Z", bare["version"])
+    assert not (tmp_path / "model" / "metrics.json").exists()

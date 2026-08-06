@@ -28,6 +28,7 @@ Nine labels: `healthy` `outage` `weather` `snow` `snow_shedding`
 scripts/fetch.sh                           # one-time PVDAQ download
 uv run --env-file .env python -m triage    # run one site (TRIAGE_SITE)
 uv run python -m triage.train              # train + evaluate the student
+uv run python -m triage.train --model all  # candidate bundles + metrics under model/candidates/
 ```
 
 Edge plugin (SolarQuant spec — `POST /measure` in, prediction datums out):
